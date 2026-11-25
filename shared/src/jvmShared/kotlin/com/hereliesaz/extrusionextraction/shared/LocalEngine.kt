@@ -163,8 +163,11 @@ suspend fun generateLocal(model:File, images:List<ViewImage>, rig:Boolean, resol
             mesh
         } else checked
     }
+    progress("Matching reference exposures")
+    val photo=PhotoTexture(surface.frame,views)
+    photo.matchExposure(optimized) { context.ensureActive() }
     progress("Reprojecting calibrated photos into texture atlas")
-    val atlas=bakeTextureAtlas(optimized,PhotoTexture(surface.frame,views)) { context.ensureActive() }
+    val atlas=bakeTextureAtlas(optimized,photo) { context.ensureActive() }
     if(atlas==null) progress("Atlas budget exceeded; exporting vertex colors")
     progress("Writing GLB")
     writeGlb(optimized,if(rig) humanoidRig(optimized) else null,atlas)

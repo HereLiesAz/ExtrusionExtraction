@@ -32,6 +32,22 @@ class PhotoTextureTest {
         assertNull(PhotoTexture(frame,listOf(red)).forFace(a,c,b)(a))
         assertNull(PhotoTexture(frame,listOf(view(0x000000ff))).forFace(a,b,c)(a))
     }
+    @Test fun exposureMatchingChangesOnlySupportedViews() {
+        val light=view(0xff999999.toInt())
+        val dark=view(0xff777777.toInt())
+        val photo=PhotoTexture(frame,listOf(light,dark,occluded))
+        val positions=List(12){i->
+            val x=(i%4)*.02f;val y=(i/4)*.02f
+            listOf(Vec3(x,y,0f),Vec3(x+.01f,y,0f),Vec3(x,y+.01f,0f))
+        }.flatten()
+        val mesh=Mesh(positions,List(positions.size){Vec3(0f,0f,0f)},IntArray(positions.size){it})
+        photo.matchExposure(mesh)
+        val rgb=assertNotNull(photo.forFace(a,b,c)(a))
+        // IEC sRGB decoding of 153/255 = 0.3185468 in linear RGB.
+        assertEquals(.3185468f,rgb.x,.00001f)
+        assertEquals(.3185468f,rgb.y,.00001f)
+        assertEquals(.3185468f,rgb.z,.00001f)
+    }
     @Test fun decodedAtlasUsesPhotoAndFallsBack() {
         val mesh=Mesh(listOf(a,b,c),List(3){Vec3(0f,1f,0f)},intArrayOf(0,1,2))
         fun pixel(photo:PhotoTexture)=ImageIO.read(ByteArrayInputStream(
