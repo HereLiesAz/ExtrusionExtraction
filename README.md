@@ -1,20 +1,33 @@
-# HereLiesAz Repository Starter
+# Extrusion Extraction
 
-General-purpose starter for new HereLiesAz repositories.
+An offline-first rigged 3D model generator for Android (including compatible ChromeOS devices), Windows, macOS and Linux. No account, credits, hosted API or desktop worker. The same ONNX inference, reconstruction, skinning and GLB exporter run inside each app.
 
-This template deliberately contains **no executable GitHub Actions implementation**. Repository automation is selected from the central `HereLiesAz/workflows` catalog.
+## Use
 
-## Start here
+1. Download the full-precision `model.onnx` from [DA3-Base 4-view ONNX](https://huggingface.co/Heliosoph/da3-base-4view-onnx). Import it once using the app's document picker. We do not bundle the graph yet.
+2. Import four overlapping images of the same static subject, upright front view first. Transparent backgrounds improve isolation. Use square, consistently framed images; current adapters resize to the model's square grid.
+3. Choose fusion resolution and whether to attach the experimental humanoid T-pose rig.
+4. Generate and export a binary glTF (.glb). No network access is required after obtaining the graph.
 
-1. Rename/update the repository metadata and this README.
-2. Choose automation in `.github/workflow-request.yml`.
-3. Reuse existing central workflows and secrets whenever possible.
-4. If a capability is missing, submit a generalized workflow to `HereLiesAz/workflows`; do not create a one-off local implementation.
-5. Keep `version.properties` as the canonical project version state unless the repository has an established compatible version contract.
+The current checkpoint uses four calibrated views per inference. Geometry is up to scale, not meters. The CPU graph can require substantial RAM; low-memory devices may fail. Performance and compatibility have not been measured on physical devices.
 
-For framework-specific projects, prefer one of the dedicated templates:
+## Build
 
-- `HereLiesAz/android-app-template`
-- `HereLiesAz/compose-multiplatform-template`
-- `HereLiesAz/react-app-template`
-- `HereLiesAz/gradle-library-template`
+JDK 17, Android SDK 35 and Gradle wrapper. On Windows use `gradlew.bat`.
+
+- Android/ChromeOS APK: `./gradlew :androidApp:assembleDebug`
+- Desktop development: `./gradlew :desktopApp:run`
+- Native installer on each host OS: `./gradlew :desktopApp:packageDistributionForCurrentOS` (MSI, DMG, DEB; installers are not cross-built).
+- Shared tests: `./gradlew :shared:desktopTest`
+
+Release packaging is requested through the central HereLiesAz workflow catalog, not a repository-local workflow implementation.
+
+## Scope and limitations
+
+This is a reconstruction prototype, not the finished generator. It implements calibrated depth fusion, indexed surface extraction, linear RGB vertex colors, and optional template skinning. It does not yet implement arbitrary view counts, automatic background segmentation, image synthesis, adaptive remeshing, UV textures, learned skeletons, creature/mechanical rigs, IK, animation preview, or device-validated GPU acceleration. No platform is delegated to another device. Desktop and Android use different image decoders; exact pixel parity and ChromeOS hardware support require testing.
+
+## Model provenance
+
+DA3-BASE: [Depth Anything 3](https://github.com/ByteDance-Seed/Depth-Anything-3), Apache-2.0. Four-view ONNX export: [Heliosoph](https://huggingface.co/Heliosoph/da3-base-4view-onnx), Apache-2.0. ONNX Runtime: MIT. Users obtain the graph directly; model redistribution and app release signing are separate release tasks.
+
+See [architecture](docs/ARCHITECTURE.md).
