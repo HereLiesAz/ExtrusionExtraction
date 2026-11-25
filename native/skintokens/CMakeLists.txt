@@ -26,6 +26,11 @@ set(SKINTOKENS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 add_subdirectory("${SKINTOKENS_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/skintokens" EXCLUDE_FROM_ALL)
+# MSVC rejects the pinned upstream's std::getenv call as C4996.
+# Scope the CRT compatibility definition to that target; leave other warnings intact.
+if(MSVC)
+  target_compile_definitions(skintokens PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
 add_library(ee_skintokens SHARED bridge.cpp)
 target_link_libraries(ee_skintokens PRIVATE skintokens::skintokens)
 if(NOT ANDROID)

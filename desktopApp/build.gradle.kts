@@ -12,6 +12,11 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
 }
 val state = Properties().apply { rootProject.file("version.properties").inputStream().use { load(it) } }
+// The product version remains canonical. macOS requires a positive installer major.
+val productVersionParts = listOf("Major", "Minor", "Patch").map { state.getProperty("version" + it).toInt() }
+val productVersion = productVersionParts.joinToString(".")
+val macInstallerVersion = listOf(Math.addExact(productVersionParts[0], 1), productVersionParts[1], productVersionParts[2]).joinToString(".")
+version = productVersion
 compose.desktop {
     application {
         mainClass = "com.hereliesaz.extrusionextraction.desktop.MainKt"
@@ -19,7 +24,8 @@ compose.desktop {
             providers.gradleProperty("skinTokensNativeDir").orNull?.let { appResourcesRootDir.set(file(it)) }
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "ExtrusionExtraction"
-            packageVersion = listOf("Major", "Minor", "Patch").joinToString(".") { state.getProperty("version" + it) }
+            packageVersion = productVersion
+            macOS { packageVersion = macInstallerVersion }
             modules("java.desktop", "java.logging", "jdk.unsupported")
         }
     }
