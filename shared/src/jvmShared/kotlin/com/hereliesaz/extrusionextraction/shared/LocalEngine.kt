@@ -94,10 +94,11 @@ internal fun downloadVerifiedGraph(source:String,install:(InputStream)->Unit) {
 }
 
 /** Both platforms run identical local inference windows, alignment, fusion and skin export. */
-suspend fun generateLocal(model:File, images:List<ViewImage>, rig:Boolean, resolution:Int,
+suspend fun generateLocal(model:File, images:List<ViewImage>, rig:RigMode, resolution:Int,
                           automaticMask:Boolean,
                           progress:(String)->Unit):ByteArray = withContext(Dispatchers.Default) {
     require(model.isFile) { "Import the DA3 four-view model first." }
+    require(rig!=RigMode.LEARNED || SkinTokensEngine.installed(model)) { "Verified learned rig model is unavailable." }
     val windows=viewWindows(images.size)
     val context=currentCoroutineContext()
     // Keep original RGB for DA3 pose estimation; use the learned alpha only for geometry.
@@ -150,10 +151,11 @@ suspend fun generateLocal(model:File, images:List<ViewImage>, rig:Boolean, resol
     val collision=firstNonAdjacentIntersection(mesh) { context.ensureActive() }
     require(collision==null) { "Intersecting non-adjacent faces: "+collision+". Improve reference coverage." }
     // Establish the provisional skeleton before simplification so joints do not drift.
-    val joints=if(rig) humanoidJoints(mesh) else null
+    val joints=if(rig==RigMode.TEMPLATE) humanoidJoints(mesh) else null
     val protected=joints?.let(::jointProtection) ?: { _:Vec3 -> false }
-    progress(if(rig) "Simplifying while preserving joint neighborhoods" else "Simplifying planar regions")
-    val candidate=simplifySurface(mesh,protected=protected) { context.ensureActive() }
+    progress(if(joints!=null) "Simplifying while preserving joint neighborhoods" else "Simplifying planar regions")
+    // Learned joint locations are unknown until inference; retain original detail.
+    val candidate=if(rig==RigMode.LEARNED) mesh else simplifySurface(mesh,protected=protected) { context.ensureActive() }
     val optimized=if(candidate===mesh) mesh else {
         val checked=try {
             val result=repairMesh(candidate) { context.ensureActive() }
@@ -166,16 +168,19 @@ suspend fun generateLocal(model:File, images:List<ViewImage>, rig:Boolean, resol
             mesh
         } else checked
     }
+    val bound=if(rig==RigMode.LEARNED) {
+        progress("Predicting learned skeleton and skin weights")
+        SkinTokensEngine.rig(model,optimized) { context.ensureActive() }
+    } else joints?.let {
+        progress("Binding surface-aware skin weights")
+        humanoidRig(optimized,it) { context.ensureActive() }
+    }
     progress("Matching reference exposures")
     val photo=PhotoTexture(surface.frame,views)
     photo.matchExposure(optimized) { context.ensureActive() }
     progress("Reprojecting calibrated photos into texture atlas")
     val atlas=bakeTextureAtlas(optimized,photo) { context.ensureActive() }
     if(atlas==null) progress("Atlas budget exceeded; exporting vertex colors")
-    val bound=joints?.let {
-        progress("Binding surface-aware skin weights")
-        humanoidRig(optimized,it) { context.ensureActive() }
-    }
     progress("Writing GLB")
     writeGlb(optimized,bound,atlas)
 }

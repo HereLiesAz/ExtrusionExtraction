@@ -4,6 +4,9 @@ plugins {
     id("org.jetbrains.compose")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+val skinTokensSource = providers.gradleProperty("skinTokensSource").orNull
+val skinTokensJsonDir = providers.gradleProperty("skinTokensJsonDir").orNull
+val skinTokensPins = providers.gradleProperty("skinTokensPins").orNull
 kotlin {
     jvmToolchain(17)
     androidTarget()
@@ -19,10 +22,12 @@ kotlin {
         commonTest.dependencies { implementation(kotlin("test")) }
         val androidMain by getting {
             kotlin.srcDir("src/jvmShared/kotlin")
+            if (skinTokensPins != null) resources.srcDir(skinTokensPins)
             dependencies { implementation("com.microsoft.onnxruntime:onnxruntime-android:1.22.0") }
         }
         val desktopMain by getting {
             kotlin.srcDir("src/jvmShared/kotlin")
+            if (skinTokensPins != null) resources.srcDir(skinTokensPins)
             dependencies { implementation("com.microsoft.onnxruntime:onnxruntime:1.22.0") }
         }
     }
@@ -30,7 +35,23 @@ kotlin {
 android {
     namespace = "com.hereliesaz.extrusionextraction.shared"
     compileSdk = 35
-    defaultConfig { minSdk = 28 }
+    defaultConfig {
+        minSdk = 28
+        if (skinTokensSource != null) {
+            ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+            externalNativeBuild {
+                cmake {
+                    arguments += listOf("-DSKINTOKENS_SOURCE_DIR=$skinTokensSource", "-DANDROID_STL=c++_shared")
+                    if (skinTokensJsonDir != null) arguments += "-Dnlohmann_json_DIR=$skinTokensJsonDir"
+                    targets += listOf("ee_skintokens", "skintokens")
+                }
+            }
+        }
+    }
+    if (skinTokensSource != null) {
+        ndkVersion = "28.2.13676358"
+        externalNativeBuild { cmake { path = rootProject.file("native/skintokens/CMakeLists.txt"); version = "3.31.6" } }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

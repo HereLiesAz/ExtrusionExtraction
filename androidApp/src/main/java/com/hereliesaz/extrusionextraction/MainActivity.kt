@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import com.hereliesaz.extrusionextraction.shared.*
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -94,6 +95,8 @@ class MainActivity:ComponentActivity() {
                     { foreground.isFile },
                     { withContext(Dispatchers.IO) { downloadSegmentation(foreground) } },
                     { done->foregroundDone=done;foregroundPicker.launch(arrayOf("*/*")) },
+                    { SkinTokensEngine.available() }, { SkinTokensEngine.installed(model) },
+                    { withContext(Dispatchers.IO) { val c=kotlinx.coroutines.currentCoroutineContext();SkinTokensEngine.download(model){ c.ensureActive() } } },
                     { done->imagesDone=done;imagesPicker.launch(arrayOf("image/*")) },
                     { bytes,done->pending=bytes;saveDone=done;saver.launch("model.glb") },
                     { images,rig,resolution,automaticMask,progress->generateLocal(model,images,rig,resolution,automaticMask,progress) })

@@ -17,15 +17,17 @@ fun App(modelInstalled:()->Boolean, selectModel:((Result<Unit>)->Unit)->Unit,
         download:suspend ()->Unit,
         segmentationInstalled:()->Boolean, downloadForeground:suspend ()->Unit,
         selectForeground:((Result<Unit>)->Unit)->Unit,
+        learnedAvailable:()->Boolean, learnedInstalled:()->Boolean, downloadLearned:suspend ()->Unit,
         selectImages:((Result<List<ViewImage>>)->Unit)->Unit,
         save:(ByteArray,(Result<Unit>)->Unit)->Unit,
-        generate:suspend (List<ViewImage>,Boolean,Int,Boolean,(String)->Unit)->ByteArray) {
+        generate:suspend (List<ViewImage>,RigMode,Int,Boolean,(String)->Unit)->ByteArray) {
     var installed by remember { mutableStateOf(modelInstalled()) }
     var foregroundInstalled by remember { mutableStateOf(segmentationInstalled()) }
     var automaticMask by remember { mutableStateOf(true) }
     var images by remember { mutableStateOf(emptyList<ViewImage>()) }
     var busy by remember { mutableStateOf(false) }
-    var rig by remember { mutableStateOf(true) }
+    var rig by remember { mutableStateOf(RigMode.TEMPLATE) }
+    var learnedReady by remember { mutableStateOf(learnedInstalled()) }
     var resolution by remember { mutableStateOf(72f) }
     var output by remember { mutableStateOf<ByteArray?>(null) }
     var status by remember { mutableStateOf("Import at least four overlapping views of the same subject.") }
@@ -112,13 +114,29 @@ fun App(modelInstalled:()->Boolean, selectModel:((Result<Unit>)->Unit)->Unit,
                 Text("Use an upright front view first, followed by adjacent overlapping views. Transparent backgrounds help isolate the subject.")
                 Text("Fusion resolution: ${resolution.toInt()}")
                 Slider(value=resolution,onValueChange={ resolution=it;output=null },valueRange=32f..96f,steps=7,enabled=!busy)
-                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Switch(checked=rig,onCheckedChange={ rig=it;output=null },enabled=!busy)
-                    Column {
-                        Text("Experimental humanoid rig")
-                        Text("T-pose only; template joints and surface-aware weights.",style=MaterialTheme.typography.bodySmall)
+                Text("Rigging")
+                for(mode in RigMode.entries) {
+                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                        RadioButton(selected=rig==mode,onClick={rig=mode;output=null},
+                            enabled=!busy && (mode!=RigMode.LEARNED || learnedReady))
+                        Text(when(mode){
+                            RigMode.NONE->"No rig"
+                            RigMode.TEMPLATE->"Experimental humanoid T-pose template"
+                            RigMode.LEARNED->"SkinTokens learned skeleton and skin"
+                        })
                     }
                 }
+                if(learnedAvailable() && !learnedReady) {
+                    OutlinedButton(enabled=!busy,onClick={
+                        busy=true;status="Downloading verified SkinTokens bundle"
+                        scope.launch {
+                            try {downloadLearned();learnedReady=learnedInstalled();status="SkinTokens bundle installed."}
+                            catch(e:CancellationException){throw e}
+                            catch(e:Exception){status=e.message ?: "SkinTokens download failed."}
+                            finally{busy=false}
+                        }
+                    }){Text("Download learned rig model (approximately 1.25 GB)")}
+                } else if(!learnedReady) Text("Learned rigging requires a packaged native runtime and verified model pins.")
                 Button(enabled=!busy && installed && images.size>=VIEW_COUNT &&
                     (!automaticMask || foregroundInstalled || images.all(::hasForegroundMask)),onClick={
                     busy=true;output=null;status="Starting local inference"

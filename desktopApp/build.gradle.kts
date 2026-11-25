@@ -16,6 +16,7 @@ compose.desktop {
     application {
         mainClass = "com.hereliesaz.extrusionextraction.desktop.MainKt"
         nativeDistributions {
+            providers.gradleProperty("skinTokensNativeDir").orNull?.let { appResourcesRootDir.set(file(it)) }
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "ExtrusionExtraction"
             packageVersion = listOf("Major", "Minor", "Patch").joinToString(".") { state.getProperty("version" + it) }
