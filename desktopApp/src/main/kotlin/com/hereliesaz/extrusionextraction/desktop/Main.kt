@@ -10,6 +10,7 @@ import java.awt.image.BufferedImage
 import java.io.File
 import javax.imageio.ImageIO
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -44,6 +45,8 @@ fun main()=application {
                     installSegmentation(file.inputStream(),foreground)
                 } }) }
             },
+            { SkinTokensEngine.available() }, { SkinTokensEngine.installed(model) },
+            { withContext(Dispatchers.IO) { val c=kotlinx.coroutines.currentCoroutineContext();SkinTokensEngine.download(model){ c.ensureActive() } } },
             { done->
                 val files=choose("Select overlapping views",FileDialog.LOAD,true)
                 scope.launch { done(withContext(Dispatchers.IO) { runCatching {
