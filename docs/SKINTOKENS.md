@@ -8,7 +8,7 @@ From the repository root, run `python scripts/build_skintokens.py` on each deskt
 
 Offline dependency-staging regression: `python -m unittest discover -s scripts -p test_build_skintokens.py`. The test uses real temporary Git repositories to exercise a successful pinned fetch, reusable clean checkout, wrong revision, dirty checkout and failed-fetch cleanup. It does not compile upstream.
 
-Current build attempt: CMake 3.31.6 and GCC 14.2 are present, but fetching the pinned runtime failed at DNS resolution for github.com. Android SDK/NDK are absent from the execution environment. The central repository registration is still missing; no central packaging run has been started by this change.
+Current build attempt: CMake 3.31.6 and GCC 14.2 are present, but fetching the pinned runtime failed at DNS resolution for github.com. Android SDK/NDK are absent from the execution environment. The central controller now registers this repository, but its manifest contains no workflow bindings. The catalog request alone has not activated packaging. No central packaging run has been started by this change.
 
 
 - Obtain the runtime at the pinned commit, including its pinned GGML submodule; CMake rejects a different HEAD. Provide CMake 3.25+ and nlohmann-json 3.11+, and a compiler supporting C++23 std::expected. The Android lane requires the NDK and CMake versions declared in shared/build.gradle.kts and an Android-compatible nlohmann-json CMake package.
