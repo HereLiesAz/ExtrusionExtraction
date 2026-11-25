@@ -1,7 +1,5 @@
 package com.hereliesaz.extrusionextraction.shared
 
-import kotlin.math.pow
-
 /** Joint position in model coordinates, with parent index preceding each child. */
 data class Joint(val name:String,val parent:Int,val position:Vec3)
 /** Four joint indices and normalized weights per vertex. */
@@ -27,22 +25,9 @@ fun humanoidJoints(mesh:Mesh):List<Joint> {
     return j
 }
 
-/** Bind a fixed skeleton to the final mesh; topology changes do not move joints. */
-fun humanoidRig(mesh:Mesh,j:List<Joint> = humanoidJoints(mesh)):Rig {
-    require(j.size>=4)
-    val indices=IntArray(mesh.vertices.size*4); val weights=FloatArray(indices.size)
-    for((i,v) in mesh.vertices.withIndex()) {
-        val nearest=j.indices.sortedBy { val d=v-j[it].position;d.dot(d) }.take(4)
-        var sum=0f
-        for((k,id) in nearest.withIndex()) {
-            val d=v-j[id].position
-            val w=1f/d.dot(d).coerceAtLeast(.000025f).pow(2)
-            indices[i*4+k]=id;weights[i*4+k]=w;sum+=w
-        }
-        for(k in 0..3) weights[i*4+k]/=sum
-    }
-    return Rig(j,indices,weights)
-}
+/** Bind a fixed skeleton using surface distances; topology changes do not move joints. */
+fun humanoidRig(mesh:Mesh,j:List<Joint> = humanoidJoints(mesh),checkpoint:()->Unit={}):Rig =
+    surfaceSkin(mesh,j,checkpoint)
 
 /** Protect a bounded neighborhood around each provisional joint. Radius is based
  * on adjacent bone lengths in the normalized mesh frame, not a learned bend region.

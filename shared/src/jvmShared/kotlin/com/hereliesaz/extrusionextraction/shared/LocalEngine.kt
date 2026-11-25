@@ -172,6 +172,10 @@ suspend fun generateLocal(model:File, images:List<ViewImage>, rig:Boolean, resol
     progress("Reprojecting calibrated photos into texture atlas")
     val atlas=bakeTextureAtlas(optimized,photo) { context.ensureActive() }
     if(atlas==null) progress("Atlas budget exceeded; exporting vertex colors")
+    val bound=joints?.let {
+        progress("Binding surface-aware skin weights")
+        humanoidRig(optimized,it) { context.ensureActive() }
+    }
     progress("Writing GLB")
-    writeGlb(optimized,joints?.let { humanoidRig(optimized,it) },atlas)
+    writeGlb(optimized,bound,atlas)
 }
