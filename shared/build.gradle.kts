@@ -6,7 +6,6 @@ plugins {
 }
 val skinTokensSource = providers.gradleProperty("skinTokensSource").orNull
 val skinTokensJsonDir = providers.gradleProperty("skinTokensJsonDir").orNull
-val skinTokensPins = providers.gradleProperty("skinTokensPins").orNull
 kotlin {
     jvmToolchain(17)
     androidTarget()
@@ -22,12 +21,10 @@ kotlin {
         commonTest.dependencies { implementation(kotlin("test")) }
         val androidMain by getting {
             kotlin.srcDir("src/jvmShared/kotlin")
-            if (skinTokensPins != null) resources.srcDir(skinTokensPins)
             dependencies { implementation("com.microsoft.onnxruntime:onnxruntime-android:1.22.0") }
         }
         val desktopMain by getting {
             kotlin.srcDir("src/jvmShared/kotlin")
-            if (skinTokensPins != null) resources.srcDir(skinTokensPins)
             dependencies { implementation("com.microsoft.onnxruntime:onnxruntime:1.22.0") }
         }
     }

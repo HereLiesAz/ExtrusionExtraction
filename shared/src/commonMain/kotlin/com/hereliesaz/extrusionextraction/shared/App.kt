@@ -136,7 +136,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((Result<Unit>)->Unit)->Unit,
                             finally{busy=false}
                         }
                     }){Text("Download learned rig model (approximately 1.25 GB)")}
-                } else if(!learnedReady) Text("Learned rigging requires a packaged native runtime and verified model pins.")
+                } else if(!learnedReady) Text("Learned rigging requires the packaged SkinTokens native runtime.")
                 Button(enabled=!busy && installed && images.size>=VIEW_COUNT &&
                     (!automaticMask || foregroundInstalled || images.all(::hasForegroundMask)),onClick={
                     busy=true;output=null;status="Starting local inference"
