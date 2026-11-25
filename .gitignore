@@ -11,3 +11,5 @@ out/
 .kotlin/
 local.properties
 *.onnx
+
+__pycache__/

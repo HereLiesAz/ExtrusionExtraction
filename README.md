@@ -19,6 +19,7 @@ JDK 17, Android SDK 35 and Gradle wrapper. On Windows use `gradlew.bat`.
 - Desktop development: `./gradlew :desktopApp:run`
 - Native installer on each host OS: `./gradlew :desktopApp:packageDistributionForCurrentOS` (MSI, DMG, DEB; installers are not cross-built).
 - Shared tests: `./gradlew :shared:desktopTest`
+- Optional pinned native rigging preparation/build: `python scripts/build_skintokens.py` (`--prepare-only` for Android). See [native integration](docs/SKINTOKENS.md).
 
 Release packaging is requested through the central HereLiesAz workflow catalog, not a repository-local workflow implementation.
 

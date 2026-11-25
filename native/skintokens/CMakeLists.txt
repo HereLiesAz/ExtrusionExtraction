@@ -13,6 +13,11 @@ execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${SKINTOKENS_SOURCE_DIR}" rev-pa
 if(NOT upstream_revision STREQUAL "43aac7b0fe45f5cd802365e6964c13bfc5e5fb52")
   message(FATAL_ERROR "SkinTokens source must match the reviewed runtime revision")
 endif()
+execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${SKINTOKENS_SOURCE_DIR}" status --porcelain --untracked-files=all --ignore-submodules=none
+  OUTPUT_VARIABLE upstream_status OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+if(NOT upstream_status STREQUAL "")
+  message(FATAL_ERROR "SkinTokens dependency checkout must be pristine")
+endif()
 # Portable baseline: statically linked CPU GGML, no runtime backend discovery dependency.
 set(SKINTOKENS_ENABLE_VULKAN OFF CACHE BOOL "" FORCE)
 set(SKINTOKENS_DYNAMIC_BACKENDS OFF CACHE BOOL "" FORCE)
@@ -34,6 +39,10 @@ elseif(UNIX AND NOT ANDROID)
   set_target_properties(ee_skintokens PROPERTIES INSTALL_RPATH "$ORIGIN")
 endif()
 # Avoid symlink-dependent packaging on all native targets.
-set_target_properties(skintokens PROPERTIES VERSION "" SOVERSION "")
+set_property(TARGET skintokens PROPERTY VERSION)
+set_property(TARGET skintokens PROPERTY SOVERSION)
 install(TARGETS ee_skintokens skintokens
-  RUNTIME DESTINATION common LIBRARY DESTINATION common)
+  RUNTIME DESTINATION common COMPONENT ee_runtime
+  LIBRARY DESTINATION common COMPONENT ee_runtime)
+install(FILES "${SKINTOKENS_SOURCE_DIR}/LICENSE" DESTINATION common/licenses RENAME skintokens-LICENSE COMPONENT ee_runtime)
+install(FILES "${SKINTOKENS_SOURCE_DIR}/ggml/LICENSE" DESTINATION common/licenses RENAME ggml-LICENSE COMPONENT ee_runtime)
