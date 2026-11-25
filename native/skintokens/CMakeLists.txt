@@ -4,6 +4,9 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(SKINTOKENS_SOURCE_DIR "" CACHE PATH "Checkout of the pinned SkinTokens C++ runtime")
+if(NOT EXISTS "${SKINTOKENS_SOURCE_DIR}/include/skintokens/skintokens.hpp")
+  message(FATAL_ERROR "Provide the pinned SkinTokens checkout via SKINTOKENS_SOURCE_DIR")
+endif()
 find_package(Git REQUIRED)
 execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${SKINTOKENS_SOURCE_DIR}" rev-parse HEAD
   OUTPUT_VARIABLE upstream_revision OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
@@ -30,9 +33,7 @@ if(APPLE)
 elseif(UNIX AND NOT ANDROID)
   set_target_properties(ee_skintokens PROPERTIES INSTALL_RPATH "$ORIGIN")
 endif()
-if(ANDROID)
-  # Android's native loader expects unversioned .so names.
-  set_target_properties(skintokens PROPERTIES VERSION "" SOVERSION "")
-endif()
+# Avoid symlink-dependent packaging on all native targets.
+set_target_properties(skintokens PROPERTIES VERSION "" SOVERSION "")
 install(TARGETS ee_skintokens skintokens
   RUNTIME DESTINATION common LIBRARY DESTINATION common)

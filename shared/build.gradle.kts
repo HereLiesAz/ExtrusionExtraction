@@ -5,6 +5,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 val skinTokensSource = providers.gradleProperty("skinTokensSource").orNull
+val skinTokensJsonDir = providers.gradleProperty("skinTokensJsonDir").orNull
 val skinTokensPins = providers.gradleProperty("skinTokensPins").orNull
 kotlin {
     jvmToolchain(17)
@@ -41,6 +42,7 @@ android {
             externalNativeBuild {
                 cmake {
                     arguments += listOf("-DSKINTOKENS_SOURCE_DIR=$skinTokensSource", "-DANDROID_STL=c++_shared")
+                    if (skinTokensJsonDir != null) arguments += "-Dnlohmann_json_DIR=$skinTokensJsonDir"
                     targets += listOf("ee_skintokens", "skintokens")
                 }
             }

@@ -168,12 +168,6 @@ suspend fun generateLocal(model:File, images:List<ViewImage>, rig:RigMode, resol
             mesh
         } else checked
     }
-    progress("Matching reference exposures")
-    val photo=PhotoTexture(surface.frame,views)
-    photo.matchExposure(optimized) { context.ensureActive() }
-    progress("Reprojecting calibrated photos into texture atlas")
-    val atlas=bakeTextureAtlas(optimized,photo) { context.ensureActive() }
-    if(atlas==null) progress("Atlas budget exceeded; exporting vertex colors")
     val bound=if(rig==RigMode.LEARNED) {
         progress("Predicting learned skeleton and skin weights")
         SkinTokensEngine.rig(model,optimized) { context.ensureActive() }
@@ -181,6 +175,12 @@ suspend fun generateLocal(model:File, images:List<ViewImage>, rig:RigMode, resol
         progress("Binding surface-aware skin weights")
         humanoidRig(optimized,it) { context.ensureActive() }
     }
+    progress("Matching reference exposures")
+    val photo=PhotoTexture(surface.frame,views)
+    photo.matchExposure(optimized) { context.ensureActive() }
+    progress("Reprojecting calibrated photos into texture atlas")
+    val atlas=bakeTextureAtlas(optimized,photo) { context.ensureActive() }
+    if(atlas==null) progress("Atlas budget exceeded; exporting vertex colors")
     progress("Writing GLB")
     writeGlb(optimized,bound,atlas)
 }
