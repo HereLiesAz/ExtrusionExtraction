@@ -149,8 +149,11 @@ suspend fun generateLocal(model:File, images:List<ViewImage>, rig:Boolean, resol
     progress("Checking geometric intersections")
     val collision=firstNonAdjacentIntersection(mesh) { context.ensureActive() }
     require(collision==null) { "Intersecting non-adjacent faces: "+collision+". Improve reference coverage." }
-    progress("Simplifying planar regions")
-    val candidate=simplifySurface(mesh) { context.ensureActive() }
+    // Establish the provisional skeleton before simplification so joints do not drift.
+    val joints=if(rig) humanoidJoints(mesh) else null
+    val protected=joints?.let(::jointProtection) ?: { _:Vec3 -> false }
+    progress(if(rig) "Simplifying while preserving joint neighborhoods" else "Simplifying planar regions")
+    val candidate=simplifySurface(mesh,protected=protected) { context.ensureActive() }
     val optimized=if(candidate===mesh) mesh else {
         val checked=try {
             val result=repairMesh(candidate) { context.ensureActive() }
@@ -170,5 +173,5 @@ suspend fun generateLocal(model:File, images:List<ViewImage>, rig:Boolean, resol
     val atlas=bakeTextureAtlas(optimized,photo) { context.ensureActive() }
     if(atlas==null) progress("Atlas budget exceeded; exporting vertex colors")
     progress("Writing GLB")
-    writeGlb(optimized,if(rig) humanoidRig(optimized) else null,atlas)
+    writeGlb(optimized,joints?.let { humanoidRig(optimized,it) },atlas)
 }

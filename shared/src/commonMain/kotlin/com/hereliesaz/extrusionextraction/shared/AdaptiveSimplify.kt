@@ -6,11 +6,12 @@ import kotlin.math.sqrt
  * Only near-planar, similar-color one-rings are eligible. The closed-manifold
  * link condition, surviving face orientation and an accumulated displacement
  * bound constrain each collapse. Disconnected shells and sharp features are
- * retained. This is triangle simplification, not quad or deformation retopology.
+ * retained. Optional protected regions preserve existing incident triangles.
+ * This is joint-aware triangle simplification, not quad retopology.
  * The caller must validate the output against geometric intersections.
  */
 fun simplifySurface(mesh:Mesh, maxDisplacement:Float=.015f, passes:Int=3,
-                    checkpoint:()->Unit={}):Mesh {
+                    protected:(Vec3)->Boolean={false},checkpoint:()->Unit={}):Mesh {
     require(maxDisplacement.isFinite() && maxDisplacement>0f && passes in 1..8)
     val vertices=mesh.vertices.toMutableList();val colors=mesh.colors.toMutableList()
     val radius=FloatArray(vertices.size)
@@ -40,11 +41,15 @@ fun simplifySurface(mesh:Mesh, maxDisplacement:Float=.015f, passes:Int=3,
                 ring.all { f->normals[f].dot(normals[f])>1e-20f && normals[f].unit().dot(reference)>=.97f }
             }
         }
+        val protectedVertex=BooleanArray(vertices.size){protected(vertices[it])}
+        val protectedRing=BooleanArray(vertices.size){v->
+            protectedVertex[v] || neighbors[v].any{protectedVertex[it]}
+        }
         val candidates=mutableListOf<Triple<Float,Int,Int>>()
         for(a in vertices.indices) {
             if(a%1024==0) checkpoint()
-            if(!flat[a]) continue
-            for(b in neighbors[a]) if(b>a && flat[b]) {
+            if(!flat[a] || protectedRing[a]) continue
+            for(b in neighbors[a]) if(b>a && flat[b] && !protectedRing[b]) {
                 val distance=length(vertices[a]-vertices[b])
                 if(distance*.5f+maxOf(radius[a],radius[b])<=maxDisplacement &&
                     length(colors[a]-colors[b])<=.08f) candidates.add(Triple(distance,a,b))
@@ -64,6 +69,7 @@ fun simplifySurface(mesh:Mesh, maxDisplacement:Float=.015f, passes:Int=3,
             if(incident[a].any{f->shared.all{it in faces[f]}} &&
                 incident[b].any{f->shared.all{it in faces[f]}}) continue
             val midpoint=(vertices[a]+vertices[b])*.5f
+            if(protected(midpoint)) continue
             val newRadius=maxOf(radius[a]+length(vertices[a]-midpoint),radius[b]+length(vertices[b]-midpoint))
             if(newRadius>maxDisplacement) continue
             val affected=(incident[a]+incident[b]).distinct().filter{it !in edgeFaces}
