@@ -37,7 +37,7 @@ fun main()=application {
             { done->
                 val files=choose("Select overlapping views",FileDialog.LOAD,true)
                 scope.launch { done(withContext(Dispatchers.IO) { runCatching {
-                    require(files.size<=VIEW_COUNT) { "Select at most four views." }
+                    require(files.size<=MAX_REFERENCES) { "Select at most $MAX_REFERENCES views." }
                     files.map { file->
                         val image=ImageIO.createImageInputStream(file).use { input->
                             val readers=ImageIO.getImageReaders(input)

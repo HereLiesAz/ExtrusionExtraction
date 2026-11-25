@@ -43,7 +43,7 @@ class MainActivity:ComponentActivity() {
                 val done=imagesDone;imagesDone=null
                 scope.launch {
                     done?.invoke(withContext(Dispatchers.IO) { runCatching {
-                        require(uris.size<=VIEW_COUNT) { "Select at most four views." }
+                        require(uris.size<=MAX_REFERENCES) { "Select at most $MAX_REFERENCES views." }
                         uris.map { uri ->
                             val name=contentResolver.query(uri,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)
                                 ?.use { if(it.moveToFirst()) it.getString(0) else null } ?: "Image"

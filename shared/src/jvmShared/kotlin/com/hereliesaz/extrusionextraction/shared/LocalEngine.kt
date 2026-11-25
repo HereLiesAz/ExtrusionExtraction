@@ -78,44 +78,48 @@ fun downloadModel(destination:File, progress:(String)->Unit = {}) {
     error("Too many model download redirects.")
 }
 
-/** Both platforms run the same CPU ONNX session, preprocessing, fusion and skin export.
- * Four views are inferred jointly; no network requests or external worker exist.
- */
+/** Both platforms run identical local inference windows, alignment, fusion and skin export. */
 suspend fun generateLocal(model:File, images:List<ViewImage>, rig:Boolean, resolution:Int,
                           progress:(String)->Unit):ByteArray = withContext(Dispatchers.Default) {
     require(model.isFile) { "Import the DA3 four-view model first." }
-    require(images.size==VIEW_COUNT) { "Exactly four overlapping views are required." }
+    val windows=viewWindows(images.size)
     val context=currentCoroutineContext()
-    progress("Estimating depth and cameras locally")
     val pixels=IMAGE_SIZE*IMAGE_SIZE
     val input=FloatArray(VIEW_COUNT*3*pixels)
     val mean=floatArrayOf(.485f,.456f,.406f); val std=floatArrayOf(.229f,.224f,.225f)
-    for((v,image) in images.withIndex()) for(i in 0 until pixels) {
-        val argb=image.argb[i]
-        val alpha=(argb ushr 24)/255f
-        for(c in 0..2) {
-            val color=(argb ushr (16-c*8) and 255)/255f
-            input[(v*3+c)*pixels+i]=(color*alpha+1f-alpha-mean[c])/std[c]
-        }
-    }
     val env=OrtEnvironment.getEnvironment()
-    val views=OrtSession.SessionOptions().use { options ->
+    var views=emptyList<CameraView>()
+    OrtSession.SessionOptions().use { options ->
         options.setIntraOpNumThreads(minOf(4,Runtime.getRuntime().availableProcessors()))
         env.createSession(model.absolutePath,options).use { session ->
-            OnnxTensor.createTensor(env,FloatBuffer.wrap(input),longArrayOf(1,4,3,504,504)).use { tensor ->
-                session.run(mapOf("images" to tensor)).use { result ->
-                    fun read(name:String, count:Int):FloatArray {
-                        val value=result.get(name).orElseThrow { IllegalArgumentException("Missing output: "+name) } as OnnxTensor
-                        val buffer=value.floatBuffer
-                        require(buffer.remaining()==count) { "Unexpected output shape: "+name }
-                        return FloatArray(count).also { buffer.get(it) }
+            for((windowIndex,window) in windows.withIndex()) {
+                context.ensureActive()
+                progress("Estimating depth and cameras: window ${windowIndex+1}/${windows.size}")
+                val refs=window.map { images[it] }
+                for((v,image) in refs.withIndex()) for(i in 0 until pixels) {
+                    val argb=image.argb[i]
+                    val alpha=(argb ushr 24)/255f
+                    for(c in 0..2) {
+                        val color=(argb ushr (16-c*8) and 255)/255f
+                        input[(v*3+c)*pixels+i]=(color*alpha+1f-alpha-mean[c])/std[c]
                     }
-                    val depth=read("depth",4*pixels);val confidence=read("depth_conf",4*pixels)
-                    val k=read("intrinsics",36);val extrinsic=read("extrinsics",48)
-                    List(4) { i -> CameraView(images[i],depth.copyOfRange(i*pixels,(i+1)*pixels),
-                        confidence.copyOfRange(i*pixels,(i+1)*pixels),k.copyOfRange(i*9,(i+1)*9),
-                        extrinsic.copyOfRange(i*12,(i+1)*12)) }
                 }
+                val local=OnnxTensor.createTensor(env,FloatBuffer.wrap(input),longArrayOf(1,4,3,504,504)).use { tensor ->
+                    session.run(mapOf("images" to tensor)).use { result ->
+                        fun read(name:String, count:Int):FloatArray {
+                            val value=result.get(name).orElseThrow { IllegalArgumentException("Missing output: "+name) } as OnnxTensor
+                            val buffer=value.floatBuffer
+                            require(buffer.remaining()==count) { "Unexpected output shape: "+name }
+                            return FloatArray(count).also { buffer.get(it) }
+                        }
+                        val depth=read("depth",4*pixels);val confidence=read("depth_conf",4*pixels)
+                        val k=read("intrinsics",36);val extrinsic=read("extrinsics",48)
+                        List(4) { i -> CameraView(refs[i],depth.copyOfRange(i*pixels,(i+1)*pixels),
+                            confidence.copyOfRange(i*pixels,(i+1)*pixels),k.copyOfRange(i*9,(i+1)*9),
+                            extrinsic.copyOfRange(i*12,(i+1)*12)) }
+                    }
+                }
+                views=if(views.isEmpty()) local else appendWindow(views,window.first,local)
             }
         }
     }

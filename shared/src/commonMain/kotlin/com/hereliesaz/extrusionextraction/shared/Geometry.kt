@@ -65,7 +65,7 @@ private fun linear(c: Int): Float { val v=c/255f; return if(v<=.04045f) v/12.92f
  * Unknown space is not treated as observed occupied volume.
  */
 fun fuse(views: List<CameraView>, resolution: Int = 72, checkpoint: () -> Unit = {}): Mesh {
-    require(views.size==VIEW_COUNT && resolution in 32..128)
+    require(views.size in VIEW_COUNT..MAX_REFERENCES && resolution in 32..128)
     val samples=mutableListOf<Vec3>()
     for(v in views) for(y in 0 until IMAGE_SIZE step 8) for(x in 0 until IMAGE_SIZE step 8) {
         val i=y*IMAGE_SIZE+x

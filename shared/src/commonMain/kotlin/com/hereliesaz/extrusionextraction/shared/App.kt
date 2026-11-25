@@ -24,7 +24,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((Result<Unit>)->Unit)->Unit,
     var rig by remember { mutableStateOf(true) }
     var resolution by remember { mutableStateOf(72f) }
     var output by remember { mutableStateOf<ByteArray?>(null) }
-    var status by remember { mutableStateOf("Import four overlapping views of the same subject.") }
+    var status by remember { mutableStateOf("Import at least four overlapping views of the same subject.") }
     val scope=rememberCoroutineScope()
     MaterialTheme(colorScheme=darkColorScheme(primary=Color(0xFF89DFCF))) {
         Surface(Modifier.fillMaxSize()) {
@@ -56,16 +56,16 @@ fun App(modelInstalled:()->Boolean, selectModel:((Result<Unit>)->Unit)->Unit,
                     }
                 }) { Text("Download model") }
                 Text("One-time verified model download; subsequent generations are offline.")
-                Button(enabled=!busy && images.size<VIEW_COUNT,onClick={
+                Button(enabled=!busy && images.size<MAX_REFERENCES,onClick={
                     busy=true
                     selectImages { result ->
                         busy=false
                         result.onSuccess { selected ->
-                            if(images.size+selected.size>VIEW_COUNT) status="Only four views are supported in this model."
+                            if(images.size+selected.size>MAX_REFERENCES) status="At most $MAX_REFERENCES references per reconstruction."
                             else { images=images+selected;output=null;status="References imported." }
                         }.onFailure { status=it.message ?: "Image import failed." }
                     }
-                }) { Text("Add views (${images.size}/4)") }
+                }) { Text("Add views (${images.size}/$MAX_REFERENCES)") }
                 images.forEachIndexed { i,image ->
                     Row(Modifier.fillMaxWidth()) {
                         Text("${i+1}. ${image.name}",Modifier.weight(1f))
@@ -77,7 +77,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((Result<Unit>)->Unit)->Unit,
                         }) { Text("Remove") }
                     }
                 }
-                Text("Use an upright front view first. Transparent backgrounds help isolate the subject.")
+                Text("Use an upright front view first, followed by adjacent overlapping views. Transparent backgrounds help isolate the subject.")
                 Text("Fusion resolution: ${resolution.toInt()}")
                 Slider(value=resolution,onValueChange={ resolution=it;output=null },valueRange=32f..96f,steps=7,enabled=!busy)
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -87,7 +87,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((Result<Unit>)->Unit)->Unit,
                         Text("T-pose only; template joints and distance weights.",style=MaterialTheme.typography.bodySmall)
                     }
                 }
-                Button(enabled=!busy && installed && images.size==VIEW_COUNT,onClick={
+                Button(enabled=!busy && installed && images.size>=VIEW_COUNT,onClick={
                     busy=true;output=null;status="Starting local inference"
                     val refs=images.toList();val useRig=rig;val voxels=resolution.toInt()
                     scope.launch {
