@@ -54,3 +54,15 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 }
+
+/** Native validation is opt-in via the same staging property used by packaging.
+ * The Linux packaging lane already calls desktopTest with this property.
+ */
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    val nativeStage = providers.gradleProperty("skinTokensNativeDir").orNull
+    if (name == "desktopTest" && nativeStage != null) {
+        systemProperty("ee.skintokens.smoke.native", file(nativeStage).resolve("common").absolutePath)
+        outputs.upToDateWhen { false }
+        testLogging.showStandardStreams = true
+    }
+}
