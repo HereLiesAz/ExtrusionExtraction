@@ -31,6 +31,7 @@ class ReconstructedSurface(val mesh:Mesh,val frame:ReconstructionFrame)
  */
 class PhotoTexture(private val frame:ReconstructionFrame,private val views:List<CameraView>) {
     private data class Sample(val rgb:Vec3,val weight:Float)
+    private var gains=FloatArray(views.size){1f}
     private fun sample(view:CameraView,world:Vec3,normal:Vec3):Sample? {
         val p=view.camera(world)
         if(!p.finite() || p.z<=0f) return null
@@ -62,19 +63,52 @@ class PhotoTexture(private val frame:ReconstructionFrame,private val views:List<
         if(coverage<.5f || sum<=0f) return null
         return Sample(rgb*(1f/sum),sum*facing*facing)
     }
+    /** Estimate exposure from at most 2048 deterministically spaced face centers.
+     * Only mutually visible depth-consistent, front-facing samples contribute.
+     * Run once before atlas baking; subsequent sampling uses the fixed gains.
+     */
+    fun matchExposure(mesh:Mesh,checkpoint:()->Unit={}) {
+        if(views.size<2) return
+        val count=mesh.indices.size/3
+        val observations=Array(views.size){Array(views.size){mutableListOf<Float>()}}
+        val samples=minOf(count,2048)
+        for(i in 0 until samples) {
+            if(i%32==0) checkpoint()
+            val face=(i.toLong()*count/samples).toInt()*3
+            val a=mesh.vertices[mesh.indices[face]]
+            val b=mesh.vertices[mesh.indices[face+1]]
+            val c=mesh.vertices[mesh.indices[face+2]]
+            val world=frame.world((a+b+c)*(1f/3f))
+            val normal=frame.direction((b-a).cross(c-a).unit())
+            val observed=views.map{sample(it,world,normal)}
+            for(left in observed.indices) {
+                val first=observed[left] ?: continue
+                if(first.weight<.05f) continue
+                for(right in left+1 until observed.size) {
+                    val second=observed[right] ?: continue
+                    if(second.weight<.05f) continue
+                    exposureRatio(first.rgb,second.rgb)?.let{observations[left][right].add(it)}
+                }
+            }
+        }
+        val overlaps=mutableListOf<ExposureOverlap>()
+        for(i in views.indices) for(j in i+1 until views.size)
+            summarizeExposure(i,j,observations[i][j])?.let{overlaps.add(it)}
+        gains=exposureGains(views.size,overlaps)
+    }
     /** Prepare a bounded per-triangle sampler using original calibrated reference pixels. */
     fun forFace(a:Vec3,b:Vec3,c:Vec3):(Vec3)->Vec3? {
         val wa=frame.world(a);val wb=frame.world(b);val wc=frame.world(c)
         val normal=frame.direction((b-a).cross(c-a).unit())
         val center=(wa+wb+wc)*(1f/3f)
-        val candidates=views.mapNotNull { view ->
+        val candidates=views.mapIndexedNotNull { index,view ->
             val score=listOf(center,wa,wb,wc).maxOf { sample(view,it,normal)?.weight ?: 0f }
-            if(score>0f) view to score else null
+            if(score>0f) index to score else null
         }.sortedByDescending{it.second}.take(3).map{it.first}
         return { p ->
             val world=frame.world(p)
             var sum=0f;var rgb=Vec3(0f,0f,0f)
-            for(view in candidates) sample(view,world,normal)?.let { s -> rgb=rgb+s.rgb*s.weight;sum+=s.weight }
+            for(index in candidates) sample(views[index],world,normal)?.let { s -> rgb=rgb+s.rgb*(s.weight*gains[index]);sum+=s.weight }
             if(sum>0f) rgb*(1f/sum) else null
         }
     }
