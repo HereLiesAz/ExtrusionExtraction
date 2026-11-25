@@ -10,11 +10,11 @@ import kotlin.math.roundToInt
 /** Per-corner UVs and a self-contained sRGB PNG. The original mesh is unchanged. */
 class TextureAtlas(val uv:FloatArray,val png:ByteArray,val size:Int)
 
-/** Bake linear vertex colors into individually padded triangle charts.
- * This is a bounded, editable base-color atlas, not photographic reprojection.
+/** Bake photographic samples or linear vertex colors into padded triangle charts.
+ * Missing depth-consistent photographic samples use interpolated vertex colors.
  * Return null when the triangle budget cannot fit a 4096px atlas at 8px per chart.
  */
-fun bakeTextureAtlas(mesh:Mesh,checkpoint:()->Unit={}):TextureAtlas? {
+fun bakeTextureAtlas(mesh:Mesh,photo:PhotoTexture?=null,checkpoint:()->Unit={}):TextureAtlas? {
     val count=mesh.indices.size/3
     val tile=listOf(32,16,8).firstOrNull { count<=(4096/it)*(4096/it) } ?: return null
     var size=tile
@@ -31,6 +31,8 @@ fun bakeTextureAtlas(mesh:Mesh,checkpoint:()->Unit={}):TextureAtlas? {
         if(face%256==0) checkpoint()
         val ox=(face%columns)*tile;val oy=(face/columns)*tile
         val c=Array(3){mesh.colors[mesh.indices[face*3+it]]}
+        val p=Array(3){mesh.vertices[mesh.indices[face*3+it]]}
+        val project=photo?.forFace(p[0],p[1],p[2])
         val span=(tile-3).toFloat()
         val u0=ox+1.5f;val v0=oy+1.5f
         val corners=floatArrayOf(u0,v0,u0+span,v0,u0,v0+span)
@@ -39,7 +41,8 @@ fun bakeTextureAtlas(mesh:Mesh,checkpoint:()->Unit={}):TextureAtlas? {
             var b=((x-1)/span).coerceIn(0f,1f)
             var d=((y-1)/span).coerceIn(0f,1f)
             if(b+d>1f) { val excess=(b+d-1f)/2f;b-=excess;d-=excess }
-            val rgb=c[0]*(1f-b-d)+c[1]*b+c[2]*d
+            val a=1f-b-d
+            val rgb=project?.invoke(p[0]*a+p[1]*b+p[2]*d) ?: (c[0]*a+c[1]*b+c[2]*d)
             val i=((oy+y)*size+ox+x)*3
             pixels[i]=srgb(rgb.x);pixels[i+1]=srgb(rgb.y);pixels[i+2]=srgb(rgb.z)
         }

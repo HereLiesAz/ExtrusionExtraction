@@ -57,14 +57,15 @@ class Mesh(val vertices: List<Vec3>, val colors: List<Vec3>, val indices: IntArr
         indices.size%3==0 && indices.all { it in vertices.indices } &&
         vertices.all { it.finite() } && colors.all { it.finite() }) }
 }
-private fun linear(c: Int): Float { val v=c/255f; return if(v<=.04045f) v/12.92f else ((v+.055f)/1.055f).pow(2.4f) }
+internal fun linear(c: Int): Float { val v=c/255f; return if(v<=.04045f) v/12.92f else ((v+.055f)/1.055f).pow(2.4f) }
 
 /** Confidence-weighted projective TSDF fusion, with transparent silhouette carving.
  * A bounded voxel grid controls memory use equally on Android and desktop. Marching
  * tetrahedra shares indexed edge vertices, avoiding per-view disconnected surfaces.
  * Unknown space is not treated as observed occupied volume.
+ * The returned calibration frame retains the exact inverse of mesh normalization.
  */
-fun fuse(views: List<CameraView>, resolution: Int = 72, checkpoint: () -> Unit = {}): Mesh {
+fun fuse(views: List<CameraView>, resolution: Int = 72, checkpoint: () -> Unit = {}): ReconstructedSurface {
     require(views.size in VIEW_COUNT..MAX_REFERENCES && resolution in 32..128)
     val samples=mutableListOf<Vec3>()
     for(v in views) for(y in 0 until IMAGE_SIZE step 8) for(x in 0 until IMAGE_SIZE step 8) {
@@ -168,5 +169,7 @@ fun fuse(views: List<CameraView>, resolution: Int = 72, checkpoint: () -> Unit =
     require(height>1e-6f)
     val midX=(vertices.minOf { it.x }+vertices.maxOf { it.x })/2
     val midZ=(vertices.minOf { it.z }+vertices.maxOf { it.z })/2
-    return Mesh(vertices.map { (it-Vec3(midX,minY,midZ))*(1f/height) },colors,triangles.toIntArray())
+    val offset=Vec3(midX,minY,midZ)
+    val mesh=Mesh(vertices.map { (it-offset)*(1f/height) },colors,triangles.toIntArray())
+    return ReconstructedSurface(mesh,ReconstructionFrame(views.first(),offset,height,spacing))
 }
