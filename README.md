@@ -9,7 +9,7 @@ An offline-first rigged 3D model generator for Android (including compatible Chr
 3. Download or import the foreground model if automatic masking is enabled and any input lacks alpha. Choose fusion resolution and whether to attach the experimental humanoid T-pose rig.
 4. Generate and export a binary glTF (.glb). No network access is required after obtaining the graph.
 
-The checkpoint uses four calibrated views per inference. Larger reference sets use overlapping windows, similarity alignment and pose/depth consistency checks before fusion. Geometry is up to scale, not meters. The CPU graph can require substantial RAM; low-memory devices may fail. Performance and compatibility have not been measured on physical devices.
+The checkpoint uses four calibrated views per inference. Larger reference sets use overlapping windows, similarity alignment and pose/depth consistency checks before fusion. Geometry is up to scale, not meters. Small convex planar boundary holes can be capped, but larger defects and non-manifold geometry fail explicitly. Geometric self-intersection and deformation quality are not yet validated. The CPU graph can require substantial RAM; low-memory devices may fail. Performance and compatibility have not been measured on physical devices.
 
 ## Build
 
@@ -24,7 +24,7 @@ Release packaging is requested through the central HereLiesAz workflow catalog, 
 
 ## Scope and limitations
 
-This is a reconstruction prototype, not the finished generator. It implements local neural foreground segmentation, calibrated depth fusion, indexed surface extraction, linear RGB vertex colors, and optional template skinning. It does not yet implement reference sets beyond 24 views, image synthesis, adaptive remeshing, UV textures, learned skeletons, creature/mechanical rigs, IK, animation preview, or device-validated GPU acceleration. No platform is delegated to another device. Desktop and Android use different image decoders; exact pixel parity and ChromeOS hardware support require testing.
+This is a reconstruction prototype, not the finished generator. It implements local neural foreground segmentation, calibrated depth fusion, indexed surface extraction, conservative mesh repair and closed-manifold topology checks, linear RGB vertex colors, and optional template skinning. It does not yet implement reference sets beyond 24 views, image synthesis, adaptive remeshing, UV textures, learned skeletons, creature/mechanical rigs, IK, animation preview, or device-validated GPU acceleration. No platform is delegated to another device. Desktop and Android use different image decoders; exact pixel parity and ChromeOS hardware support require testing.
 
 ## Model provenance
 
