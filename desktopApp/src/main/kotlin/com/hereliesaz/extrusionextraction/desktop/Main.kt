@@ -16,6 +16,7 @@ import kotlinx.coroutines.withContext
 /** Desktop document adapter. The same shared native inference and geometry code runs here. */
 fun main()=application {
     val model=File(System.getProperty("user.home"),".extrusion-extraction/models/da3.onnx")
+    val foreground=segmentationFile(model)
     Window(onCloseRequest=::exitApplication,title="Extrusion Extraction") {
         val scope=rememberCoroutineScope()
         fun choose(title:String,mode:Int,multiple:Boolean=false):Array<File> {
@@ -34,6 +35,15 @@ fun main()=application {
                 } }) }
             },
             { withContext(Dispatchers.IO) { downloadModel(model) } },
+            { foreground.isFile },
+            { withContext(Dispatchers.IO) { downloadSegmentation(foreground) } },
+            { done->
+                val file=choose("Select U²-Net foreground graph",FileDialog.LOAD).firstOrNull()
+                scope.launch { done(withContext(Dispatchers.IO) { runCatching {
+                    require(file!=null) { "Import cancelled." }
+                    installSegmentation(file.inputStream(),foreground)
+                } }) }
+            },
             { done->
                 val files=choose("Select overlapping views",FileDialog.LOAD,true)
                 scope.launch { done(withContext(Dispatchers.IO) { runCatching {
@@ -72,6 +82,6 @@ fun main()=application {
                     destination.writeBytes(bytes)
                 } }) }
             },
-            { images,rig,resolution,progress->generateLocal(model,images,rig,resolution,progress) })
+            { images,rig,resolution,automaticMask,progress->generateLocal(model,images,rig,resolution,automaticMask,progress) })
     }
 }

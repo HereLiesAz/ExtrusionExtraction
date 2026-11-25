@@ -24,9 +24,11 @@ class MainActivity:ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val model=File(filesDir,"models/da3.onnx")
+        val foreground=segmentationFile(model)
         setContent {
             val scope=rememberCoroutineScope()
             var modelDone by remember { mutableStateOf<((Result<Unit>)->Unit)?>(null) }
+            var foregroundDone by remember { mutableStateOf<((Result<Unit>)->Unit)?>(null) }
             var imagesDone by remember { mutableStateOf<((Result<List<ViewImage>>)->Unit)?>(null) }
             var saveDone by remember { mutableStateOf<((Result<Unit>)->Unit)?>(null) }
             var pending by remember { mutableStateOf<ByteArray?>(null) }
@@ -36,6 +38,15 @@ class MainActivity:ComponentActivity() {
                     done?.invoke(withContext(Dispatchers.IO) { runCatching {
                         require(uri!=null) { "Import cancelled." }
                         installModel(contentResolver.openInputStream(uri) ?: error("Cannot open model."),model)
+                    } })
+                }
+            }
+            val foregroundPicker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                val done=foregroundDone;foregroundDone=null
+                scope.launch {
+                    done?.invoke(withContext(Dispatchers.IO) { runCatching {
+                        require(uri!=null) { "Import cancelled." }
+                        installSegmentation(contentResolver.openInputStream(uri) ?: error("Cannot open model."),foreground)
                     } })
                 }
             }
@@ -80,9 +91,12 @@ class MainActivity:ComponentActivity() {
                 App({ model.isFile },
                     { done->modelDone=done;modelPicker.launch(arrayOf("*/*")) },
                     { withContext(Dispatchers.IO) { downloadModel(model) } },
+                    { foreground.isFile },
+                    { withContext(Dispatchers.IO) { downloadSegmentation(foreground) } },
+                    { done->foregroundDone=done;foregroundPicker.launch(arrayOf("*/*")) },
                     { done->imagesDone=done;imagesPicker.launch(arrayOf("image/*")) },
                     { bytes,done->pending=bytes;saveDone=done;saver.launch("model.glb") },
-                    { images,rig,resolution,progress->generateLocal(model,images,rig,resolution,progress) })
+                    { images,rig,resolution,automaticMask,progress->generateLocal(model,images,rig,resolution,automaticMask,progress) })
             }
         }
     }

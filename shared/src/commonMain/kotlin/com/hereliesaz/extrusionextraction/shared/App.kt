@@ -15,10 +15,14 @@ import kotlinx.coroutines.launch
 @Composable
 fun App(modelInstalled:()->Boolean, selectModel:((Result<Unit>)->Unit)->Unit,
         download:suspend ()->Unit,
+        segmentationInstalled:()->Boolean, downloadForeground:suspend ()->Unit,
+        selectForeground:((Result<Unit>)->Unit)->Unit,
         selectImages:((Result<List<ViewImage>>)->Unit)->Unit,
         save:(ByteArray,(Result<Unit>)->Unit)->Unit,
-        generate:suspend (List<ViewImage>,Boolean,Int,(String)->Unit)->ByteArray) {
+        generate:suspend (List<ViewImage>,Boolean,Int,Boolean,(String)->Unit)->ByteArray) {
     var installed by remember { mutableStateOf(modelInstalled()) }
+    var foregroundInstalled by remember { mutableStateOf(segmentationInstalled()) }
+    var automaticMask by remember { mutableStateOf(true) }
     var images by remember { mutableStateOf(emptyList<ViewImage>()) }
     var busy by remember { mutableStateOf(false) }
     var rig by remember { mutableStateOf(true) }
@@ -55,7 +59,35 @@ fun App(modelInstalled:()->Boolean, selectModel:((Result<Unit>)->Unit)->Unit,
                         finally { busy=false }
                     }
                 }) { Text("Download model") }
-                Text("One-time verified model download; subsequent generations are offline.")
+                Text("One-time verified model downloads; subsequent generations are offline.")
+                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Switch(checked=automaticMask,onCheckedChange={ automaticMask=it;output=null },enabled=!busy)
+                    Column {
+                        Text("Automatic foreground segmentation")
+                        Text("Local U²-Net; existing transparent masks are preserved.",style=MaterialTheme.typography.bodySmall)
+                    }
+                }
+                if(automaticMask && !foregroundInstalled) {
+                    Button(enabled=!busy,onClick={
+                        busy=true;status="Downloading verified foreground model"
+                        scope.launch {
+                            try {
+                                downloadForeground()
+                                foregroundInstalled=segmentationInstalled()
+                                status="Foreground model installed."
+                            } catch(e:CancellationException) { throw e }
+                            catch(e:Exception) { status=e.message ?: "Foreground download failed." }
+                            finally { busy=false }
+                        }
+                    }) { Text("Download foreground model") }
+                    OutlinedButton(enabled=!busy,onClick={
+                        busy=true
+                        selectForeground { result ->
+                            busy=false;foregroundInstalled=segmentationInstalled()
+                            status=result.fold({ "Foreground model installed." },{ it.message ?: "Foreground import failed." })
+                        }
+                    }) { Text("Import foreground model") }
+                }
                 Button(enabled=!busy && images.size<MAX_REFERENCES,onClick={
                     busy=true
                     selectImages { result ->
@@ -87,12 +119,13 @@ fun App(modelInstalled:()->Boolean, selectModel:((Result<Unit>)->Unit)->Unit,
                         Text("T-pose only; template joints and distance weights.",style=MaterialTheme.typography.bodySmall)
                     }
                 }
-                Button(enabled=!busy && installed && images.size>=VIEW_COUNT,onClick={
+                Button(enabled=!busy && installed && images.size>=VIEW_COUNT &&
+                    (!automaticMask || foregroundInstalled || images.all(::hasForegroundMask)),onClick={
                     busy=true;output=null;status="Starting local inference"
-                    val refs=images.toList();val useRig=rig;val voxels=resolution.toInt()
+                    val refs=images.toList();val useRig=rig;val voxels=resolution.toInt();val isolate=automaticMask
                     scope.launch {
                         try {
-                            output=generate(refs,useRig,voxels) { message -> scope.launch { status=message } }
+                            output=generate(refs,useRig,voxels,isolate) { message -> scope.launch { status=message } }
                             status="GLB ready."
                         } catch(e:CancellationException) { throw e }
                         catch(e:Exception) { status=e.message ?: "Generation failed." }
