@@ -33,6 +33,7 @@ fun main()=application {
                     installModel(file.inputStream(),model)
                 } }) }
             },
+            { withContext(Dispatchers.IO) { downloadModel(model) } },
             { done->
                 val files=choose("Select overlapping views",FileDialog.LOAD,true)
                 scope.launch { done(withContext(Dispatchers.IO) { runCatching {

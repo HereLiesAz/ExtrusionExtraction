@@ -10,18 +10,18 @@ kotlin {
     jvm("desktop")
     sourceSets {
         commonMain.dependencies {
-            implementation(compose.runtime)
-            implementation(compose.foundation)
+            api(compose.runtime)
+            api(compose.foundation)
             implementation(compose.material3)
-            implementation(compose.ui)
+            api(compose.ui)
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
         }
         commonTest.dependencies { implementation(kotlin("test")) }
-        androidMain {
+        val androidMain by getting {
             kotlin.srcDir("src/jvmShared/kotlin")
             dependencies { implementation("com.microsoft.onnxruntime:onnxruntime-android:1.22.0") }
         }
-        desktopMain {
+        val desktopMain by getting {
             kotlin.srcDir("src/jvmShared/kotlin")
             dependencies { implementation("com.microsoft.onnxruntime:onnxruntime:1.22.0") }
         }

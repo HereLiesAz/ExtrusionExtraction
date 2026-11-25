@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 /** Shared, offline workspace. Platform adapters provide only document IO. */
 @Composable
 fun App(modelInstalled:()->Boolean, selectModel:((Result<Unit>)->Unit)->Unit,
+        download:suspend ()->Unit,
         selectImages:((Result<List<ViewImage>>)->Unit)->Unit,
         save:(ByteArray,(Result<Unit>)->Unit)->Unit,
         generate:suspend (List<ViewImage>,Boolean,Int,(String)->Unit)->ByteArray) {
@@ -42,7 +43,19 @@ fun App(modelInstalled:()->Boolean, selectModel:((Result<Unit>)->Unit)->Unit,
                             .onFailure { status=it.message ?: "Model import failed." }
                     }
                 }) { Text("Import ONNX model") }
-                Text("Model: huggingface.co/Heliosoph/da3-base-4view-onnx (model.onnx)")
+                Button(enabled=!busy && !installed,onClick={
+                    busy=true;status="Downloading pinned DA3 model (about 413 MB)"
+                    scope.launch {
+                        try {
+                            download()
+                            installed=modelInstalled()
+                            status="Verified model installed."
+                        } catch(e:CancellationException) { throw e }
+                        catch(e:Exception) { status=e.message ?: "Download failed." }
+                        finally { busy=false }
+                    }
+                }) { Text("Download model") }
+                Text("One-time verified model download; subsequent generations are offline.")
                 Button(enabled=!busy && images.size<VIEW_COUNT,onClick={
                     busy=true
                     selectImages { result ->

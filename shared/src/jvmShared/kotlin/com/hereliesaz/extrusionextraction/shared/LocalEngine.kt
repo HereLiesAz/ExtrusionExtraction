@@ -6,14 +6,22 @@ import ai.onnxruntime.OrtSession
 import java.io.File
 import java.io.InputStream
 import java.nio.FloatBuffer
+import java.security.MessageDigest
+import java.net.HttpURLConnection
+import java.net.URI
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
-/** Copy a locally selected ONNX graph without loading hundreds of MB into JVM memory. */
+/** Pinned four-view graph, identical across desktop, Android and ChromeOS. */
+const val MODEL_URL = "https://huggingface.co/Heliosoph/da3-base-4view-onnx/resolve/58036ce15ce3510c89d954820f15725a4c896fc8/model.onnx"
+const val MODEL_SHA256 = "dcc419e93adb96dc2f09fb1af3cf6da6a551dc37645d4e4d355cb5b61161f8cd"
+
+/** Copy and verify a graph before invoking ONNX Runtime on untrusted bytes. */
 fun installModel(input: InputStream, destination: File) {
     destination.parentFile?.mkdirs()
+    val digest=MessageDigest.getInstance("SHA-256")
     val temporary=File.createTempFile("model-", ".part",destination.parentFile)
     try {
         input.use { source -> temporary.outputStream().use { output ->
@@ -22,10 +30,14 @@ fun installModel(input: InputStream, destination: File) {
             while(true) {
                 val count=source.read(buffer);if(count<0) break
                 total+=count;require(total<=600_000_000) { "ONNX graph exceeds 600 MB." }
+                digest.update(buffer,0,count)
                 output.write(buffer,0,count)
             }
             require(total>0) { "Empty model." }
         } }
+        require(digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) } == MODEL_SHA256) {
+            "Model checksum mismatch. Use the pinned DA3 four-view graph."
+        }
         // Validate the IO contract before replacing an existing model.
         val env=OrtEnvironment.getEnvironment()
         OrtSession.SessionOptions().use { options ->
@@ -39,6 +51,31 @@ fun installModel(input: InputStream, destination: File) {
         java.nio.file.Files.move(temporary.toPath(),destination.toPath(),
             java.nio.file.StandardCopyOption.REPLACE_EXISTING)
     } finally { temporary.delete() }
+}
+
+/** Explicit one-time model download. Only HTTPS redirects are followed; generation is offline. */
+fun downloadModel(destination:File, progress:(String)->Unit = {}) {
+    var url=URI(MODEL_URL).toURL()
+    repeat(8) {
+        require(url.protocol=="https") { "Insecure model redirect rejected." }
+        val connection=url.openConnection() as HttpURLConnection
+        try {
+            connection.instanceFollowRedirects=false
+            connection.connectTimeout=20_000
+            connection.readTimeout=60_000
+            val status=connection.responseCode
+            if(status in listOf(301,302,303,307,308)) {
+                url=URI(url.toString()).resolve(connection.getHeaderField("Location")
+                    ?: error("Missing download redirect.")).toURL()
+            } else {
+                check(status==200) { "Model download failed: HTTP $status" }
+                progress("Downloading and verifying DA3 model")
+                installModel(connection.inputStream,destination)
+                return
+            }
+        } finally { connection.disconnect() }
+    }
+    error("Too many model download redirects.")
 }
 
 /** Both platforms run the same CPU ONNX session, preprocessing, fusion and skin export.

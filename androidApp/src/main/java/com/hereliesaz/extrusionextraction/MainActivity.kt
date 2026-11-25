@@ -79,6 +79,7 @@ class MainActivity:ComponentActivity() {
             Box(Modifier.windowInsetsPadding(WindowInsets.safeDrawing)) {
                 App({ model.isFile },
                     { done->modelDone=done;modelPicker.launch(arrayOf("*/*")) },
+                    { withContext(Dispatchers.IO) { downloadModel(model) } },
                     { done->imagesDone=done;imagesPicker.launch(arrayOf("image/*")) },
                     { bytes,done->pending=bytes;saveDone=done;saver.launch("model.glb") },
                     { images,rig,resolution,progress->generateLocal(model,images,rig,resolution,progress) })

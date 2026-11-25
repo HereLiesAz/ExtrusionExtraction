@@ -4,7 +4,7 @@ An offline-first rigged 3D model generator for Android (including compatible Chr
 
 ## Use
 
-1. Download the full-precision `model.onnx` from [DA3-Base 4-view ONNX](https://huggingface.co/Heliosoph/da3-base-4view-onnx). Import it once using the app's document picker. We do not bundle the graph yet.
+1. Select **Download model** (a one-time HTTPS download of the pinned graph), or import the exact full-precision `model.onnx` from [DA3-Base 4-view ONNX](https://huggingface.co/Heliosoph/da3-base-4view-onnx/blob/58036ce15ce3510c89d954820f15725a4c896fc8/model.onnx). Both paths verify SHA-256 before opening the graph. The graph is not bundled.
 2. Import four overlapping images of the same static subject, upright front view first. Transparent backgrounds improve isolation. Use square, consistently framed images; current adapters resize to the model's square grid.
 3. Choose fusion resolution and whether to attach the experimental humanoid T-pose rig.
 4. Generate and export a binary glTF (.glb). No network access is required after obtaining the graph.
@@ -28,6 +28,6 @@ This is a reconstruction prototype, not the finished generator. It implements ca
 
 ## Model provenance
 
-DA3-BASE: [Depth Anything 3](https://github.com/ByteDance-Seed/Depth-Anything-3), Apache-2.0. Four-view ONNX export: [Heliosoph](https://huggingface.co/Heliosoph/da3-base-4view-onnx), Apache-2.0. ONNX Runtime: MIT. Users obtain the graph directly; model redistribution and app release signing are separate release tasks.
+DA3-BASE: [Depth Anything 3](https://github.com/ByteDance-Seed/Depth-Anything-3), Apache-2.0. Four-view ONNX export: [Heliosoph](https://huggingface.co/Heliosoph/da3-base-4view-onnx), Apache-2.0. ONNX Runtime: MIT. The model is acquired directly from its pinned public source; bundling and app release signing are separate release tasks.
 
 See [architecture](docs/ARCHITECTURE.md).
