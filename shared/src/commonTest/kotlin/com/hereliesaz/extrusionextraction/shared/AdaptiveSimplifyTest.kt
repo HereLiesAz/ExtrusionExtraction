@@ -35,6 +35,26 @@ class AdaptiveSimplifyTest {
         assertTrue(result.vertices.containsAll(listOf(original.vertices[0],original.vertices[4],original.vertices[20],original.vertices[24])))
         assertTrue(result.colors.all{it==Vec3(.4f,.4f,.4f)})
     }
+    @Test fun protectedVertexKeepsItsIncidentTriangles() {
+        val original=box();val p=original.vertices[12]
+        fun facesAt(m:Mesh)=m.indices.toList().chunked(3).map{tri->tri.map{m.vertices[it]}}.filter{p in it}.toSet()
+        val result=simplifySurface(original,protected={it==p})
+        assertClosed(result)
+        assertEquals(facesAt(original),facesAt(result))
+        assertSame(original,simplifySurface(original,protected={true}))
+    }
+    @Test fun fixedSkeletonAndBoundedJointNeighborhood() {
+        val joints=listOf(Joint("root",-1,Vec3(0f,0f,0f)),Joint("bend",0,Vec3(.1f,0f,0f)),
+            Joint("tip",1,Vec3(.2f,0f,0f)),Joint("end",2,Vec3(.3f,0f,0f)))
+        val guard=jointProtection(joints)
+        assertTrue(guard(Vec3(.1f,.06f,0f)))
+        assertFalse(guard(Vec3(.1f,.08f,0f)))
+        val mesh=simplifySurface(box(),protected=guard)
+        val bound=humanoidRig(mesh,joints)
+        assertSame(joints,bound.joints)
+        assertEquals(mesh.vertices.size*4,bound.weights.size)
+        for(i in mesh.vertices.indices) assertEquals(1f,bound.weights.sliceArray(i*4 until i*4+4).sum(),.00001f)
+    }
     @Test fun displacementLimitPreventsCollapse() {
         val original=box()
         assertSame(original,simplifySurface(original,.0001f))

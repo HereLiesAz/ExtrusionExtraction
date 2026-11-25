@@ -10,7 +10,7 @@ class Rig(val joints:List<Joint>,val indices:IntArray,val weights:FloatArray)
 /** Experimental humanoid T-pose template. Mesh-aware learned rigging is not implemented.
  * The first reference must face an upright subject with extended arms.
  */
-fun humanoidRig(mesh:Mesh):Rig {
+fun humanoidJoints(mesh:Mesh):List<Joint> {
     val half=(mesh.vertices.maxOf { it.x }-mesh.vertices.minOf { it.x })/2
     require(half>.05f) { "Mesh too narrow for T-pose rig." }
     val j=mutableListOf<Joint>()
@@ -24,6 +24,12 @@ fun humanoidRig(mesh:Mesh):Rig {
         add(side+"_hip",0,s*.22f,.49f);add(side+"_knee",start+4,s*.22f,.25f)
         add(side+"_ankle",start+5,s*.22f,.05f)
     }
+    return j
+}
+
+/** Bind a fixed skeleton to the final mesh; topology changes do not move joints. */
+fun humanoidRig(mesh:Mesh,j:List<Joint> = humanoidJoints(mesh)):Rig {
+    require(j.size>=4)
     val indices=IntArray(mesh.vertices.size*4); val weights=FloatArray(indices.size)
     for((i,v) in mesh.vertices.withIndex()) {
         val nearest=j.indices.sortedBy { val d=v-j[it].position;d.dot(d) }.take(4)
@@ -36,4 +42,22 @@ fun humanoidRig(mesh:Mesh):Rig {
         for(k in 0..3) weights[i*4+k]/=sum
     }
     return Rig(j,indices,weights)
+}
+
+/** Protect a bounded neighborhood around each provisional joint. Radius is based
+ * on adjacent bone lengths in the normalized mesh frame, not a learned bend region.
+ */
+fun jointProtection(joints:List<Joint>):(Vec3)->Boolean {
+    val radius=FloatArray(joints.size){.035f}
+    for((i,joint) in joints.withIndex()) {
+        if(joint.parent<0) continue
+        require(joint.parent<i)
+        val d=joint.position-joints[joint.parent].position
+        val r=(kotlin.math.sqrt(d.dot(d))*.65f).coerceIn(.035f,.10f)
+        radius[i]=maxOf(radius[i],r);radius[joint.parent]=maxOf(radius[joint.parent],r)
+    }
+    return { p -> joints.indices.any { i ->
+        val d=p-joints[i].position
+        d.dot(d)<=radius[i]*radius[i]
+    } }
 }
