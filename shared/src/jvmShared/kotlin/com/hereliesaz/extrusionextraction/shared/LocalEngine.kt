@@ -149,6 +149,20 @@ suspend fun generateLocal(model:File, images:List<ViewImage>, rig:Boolean, resol
     progress("Checking geometric intersections")
     val collision=firstNonAdjacentIntersection(mesh) { context.ensureActive() }
     require(collision==null) { "Intersecting non-adjacent faces: "+collision+". Improve reference coverage." }
+    progress("Simplifying planar regions")
+    val candidate=simplifySurface(mesh) { context.ensureActive() }
+    val optimized=if(candidate===mesh) mesh else {
+        val checked=try {
+            val result=repairMesh(candidate) { context.ensureActive() }
+            if(result.vertices.size==candidate.vertices.size &&
+                result.indices.contentEquals(candidate.indices) &&
+                firstNonAdjacentIntersection(result) { context.ensureActive() }==null) result else null
+        } catch(e:IllegalArgumentException) { null }
+        if(checked==null) {
+            progress("Simplification failed validation; retaining original surface")
+            mesh
+        } else checked
+    }
     progress("Writing GLB")
-    writeGlb(mesh,if(rig) humanoidRig(mesh) else null)
+    writeGlb(optimized,if(rig) humanoidRig(optimized) else null)
 }

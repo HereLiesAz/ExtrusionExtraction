@@ -24,7 +24,7 @@ Release packaging is requested through the central HereLiesAz workflow catalog, 
 
 ## Scope and limitations
 
-This is a reconstruction prototype, not the finished generator. It implements local neural foreground segmentation, calibrated depth fusion, indexed surface extraction, conservative mesh repair and closed-manifold topology checks, linear RGB vertex colors, and optional template skinning. It does not yet implement reference sets beyond 24 views, image synthesis, adaptive remeshing, UV textures, learned skeletons, creature/mechanical rigs, IK, animation preview, or device-validated GPU acceleration. No platform is delegated to another device. Desktop and Android use different image decoders; exact pixel parity and ChromeOS hardware support require testing.
+This is a reconstruction prototype, not the finished generator. It implements local neural foreground segmentation, calibrated depth fusion, indexed surface extraction, conservative mesh repair and closed-manifold topology checks, linear RGB vertex colors, conservative planar triangle simplification, and optional template skinning. It does not yet implement reference sets beyond 24 views, image synthesis, general adaptive remeshing, deformation-oriented quad retopology, UV textures, learned skeletons, creature/mechanical rigs, IK, animation preview, or device-validated GPU acceleration. No platform is delegated to another device. Desktop and Android use different image decoders; exact pixel parity and ChromeOS hardware support require testing.
 
 ## Model provenance
 
