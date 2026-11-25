@@ -4,6 +4,8 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.file.Files
+import java.io.ByteArrayInputStream
+import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.math.sqrt
 import kotlin.test.*
 
@@ -52,6 +54,26 @@ class SkinTokensInferenceTest {
         assertEquals(mesh.vertices, repaired.vertices)
         assertContentEquals(mesh.indices, repaired.indices)
         assertNull(firstNonAdjacentIntersection(mesh))
+    }
+
+    @Test fun diagnosticUsesSharedFramingAndDrawsAllFacesAndJoints() {
+        val mesh=Mesh(listOf(Vec3(0f,0f,0f),Vec3(1f,0f,0f),Vec3(0f,1f,0f)),
+            List(3){Vec3(1f,1f,1f)},intArrayOf(0,1,2))
+        val rig=Rig(listOf(Joint("root",-1,Vec3(0f,0f,0f)),
+            Joint("child",0,Vec3(0f,1f,0f))),IntArray(12),FloatArray(12))
+        val moved=mesh.vertices.map{it+Vec3(1f,0f,0f)}
+        val svg=rigVisualReport(mesh,rig,moved,rig.joints.map{it.position+Vec3(1f,0f,0f)},1)
+        val doc=DocumentBuilderFactory.newInstance().newDocumentBuilder()
+            .parse(ByteArrayInputStream(svg.encodeToByteArray()))
+        assertEquals(4,doc.getElementsByTagName("polygon").length)
+        assertEquals(4,doc.getElementsByTagName("line").length)
+        assertEquals(8,doc.getElementsByTagName("circle").length)
+        // Front projection spans two units horizontally and one vertically.
+        // 420px available horizontally gives 210px/unit, less than 292px/unit vertically.
+        val rest=doc.getElementsByTagName("polygon").item(0).attributes.getNamedItem("points").nodeValue
+        val posed=doc.getElementsByTagName("polygon").item(1).attributes.getNamedItem("points").nodeValue
+        assertEquals("30.000,383.000 240.000,383.000 30.000,173.000",rest)
+        assertEquals("720.000,383.000 930.000,383.000 720.000,173.000",posed)
     }
 
     /** Exercise the actual download, integrity recheck, native learned rig and
@@ -173,6 +195,16 @@ class SkinTokensInferenceTest {
             assertTrue(offset>=0 && length<=binSize-offset)
             assertContentEquals(atlas.png,bytes.copyOfRange(binaryStart+offset,binaryStart+offset+length))
             println("SkinTokens textured GLB bytes: ${bytes.size}")
+            val posedJoints=rig.joints.mapIndexed { i,j ->
+                if (belongs(i,child)) {
+                    val d=j.position-pivot
+                    pivot+Vec3(-d.y,d.x,d.z)
+                } else j.position
+            }
+            val diagnostics=File(requireNotNull(System.getProperty("ee.skintokens.smoke.reports")))
+            retainRigDiagnostic(diagnostics,"skintokens-rig.glb",bytes)
+            retainRigDiagnostic(diagnostics,"skintokens-pose.svg",
+                rigVisualReport(mesh,rig,posed,posedJoints,child).encodeToByteArray())
         } finally {
             folder.deleteRecursively()
         }

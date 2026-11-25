@@ -62,6 +62,7 @@ tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
     val nativeStage = providers.gradleProperty("skinTokensNativeDir").orNull
     if (name == "desktopTest" && nativeStage != null) {
         systemProperty("ee.skintokens.smoke.native", file(nativeStage).resolve("common").absolutePath)
+        systemProperty("ee.skintokens.smoke.reports", layout.buildDirectory.dir("reports/skintokens").get().asFile.absolutePath)
         outputs.upToDateWhen { false }
         testLogging.showStandardStreams = true
     }
