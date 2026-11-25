@@ -116,7 +116,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((Result<Unit>)->Unit)->Unit,
                     Switch(checked=rig,onCheckedChange={ rig=it;output=null },enabled=!busy)
                     Column {
                         Text("Experimental humanoid rig")
-                        Text("T-pose only; template joints and distance weights.",style=MaterialTheme.typography.bodySmall)
+                        Text("T-pose only; template joints and surface-aware weights.",style=MaterialTheme.typography.bodySmall)
                     }
                 }
                 Button(enabled=!busy && installed && images.size>=VIEW_COUNT &&
