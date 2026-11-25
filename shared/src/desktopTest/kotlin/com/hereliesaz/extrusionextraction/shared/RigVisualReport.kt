@@ -77,7 +77,10 @@ internal fun rigVisualReport(mesh: Mesh, rig: Rig, posed: List<Vec3>,
             for ((i,bone) in bones.withIndex()) {
                 val color=if(i==rotatedJoint) "#c82232" else "#f3a53d"
                 svg.append("""<circle cx="${f(x(bone))}" cy="${f(y(bone))}" r="4" fill="$color" stroke="#462711" stroke-width="0.7"/>""")
-                svg.append("""<text x="${f(x(bone)+6)}" y="${f(y(bone)-5)}" font-size="10" paint-order="stroke" stroke="white" stroke-width="2">$i</text>""")
+                val labelX=x(bone)+6; val labelY=y(bone)-5
+                val labelWidth=6*i.toString().length+4
+                svg.append("""<rect x="${f(labelX-2)}" y="${f(labelY-10)}" width="$labelWidth" height="13" rx="2" fill="white" fill-opacity="0.90"/>""")
+                svg.append("""<text x="${f(labelX)}" y="${f(labelY)}" font-size="10" fill="#17252e">$i</text>""")
             }
             svg.append("</g>")
         }
