@@ -146,6 +146,9 @@ suspend fun generateLocal(model:File, images:List<ViewImage>, rig:Boolean, resol
     val surface=fuse(views,resolution) { context.ensureActive() }
     progress("Repairing and validating surface topology")
     val mesh=repairMesh(surface) { context.ensureActive() }
+    progress("Checking geometric intersections")
+    val collision=firstNonAdjacentIntersection(mesh) { context.ensureActive() }
+    require(collision==null) { "Intersecting non-adjacent faces: "+collision+". Improve reference coverage." }
     progress("Writing GLB")
     writeGlb(mesh,if(rig) humanoidRig(mesh) else null)
 }

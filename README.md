@@ -9,7 +9,7 @@ An offline-first rigged 3D model generator for Android (including compatible Chr
 3. Download or import the foreground model if automatic masking is enabled and any input lacks alpha. Choose fusion resolution and whether to attach the experimental humanoid T-pose rig.
 4. Generate and export a binary glTF (.glb). No network access is required after obtaining the graph.
 
-The checkpoint uses four calibrated views per inference. Larger reference sets use overlapping windows, similarity alignment and pose/depth consistency checks before fusion. Geometry is up to scale, not meters. Small convex planar boundary holes can be capped, but larger defects and non-manifold geometry fail explicitly. Geometric self-intersection and deformation quality are not yet validated. The CPU graph can require substantial RAM; low-memory devices may fail. Performance and compatibility have not been measured on physical devices.
+The checkpoint uses four calibrated views per inference. Larger reference sets use overlapping windows, similarity alignment and pose/depth consistency checks before fusion. Geometry is up to scale, not meters. Small convex planar boundary holes can be capped, but larger defects and non-manifold geometry fail explicitly. A geometric check also rejects intersections between faces without a shared vertex. Adjacent-face intersections, numerical edge cases and deformation quality remain unvalidated. The CPU graph can require substantial RAM; low-memory devices may fail. Performance and compatibility have not been measured on physical devices.
 
 ## Build
 
