@@ -4,10 +4,14 @@ import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-/** Export indexed geometry, vertex colors, normals and optional glTF 2.0 skin.
+/** Export indexed geometry, vertex colors or a baked texture, normals and optional glTF 2.0 skin.
+ * UV seams duplicate export vertices only; normals and skin weights are copied from the original mesh.
  * Inverse bind matrices are column-major translations of the global joint positions.
  */
-fun writeGlb(mesh:Mesh,rig:Rig?):ByteArray {
+fun writeGlb(mesh:Mesh,rig:Rig?,atlas:TextureAtlas?=null):ByteArray {
+    require(atlas==null || atlas.uv.size==mesh.indices.size*2)
+    val source=if(atlas==null) IntArray(mesh.vertices.size){it} else mesh.indices
+    val exportIndices=if(atlas==null) mesh.indices else IntArray(source.size){it}
     val binary=ByteArrayOutputStream();val views=mutableListOf<String>();val access=mutableListOf<String>()
     fun buffer(size:Int)=ByteBuffer.allocate(size).order(ByteOrder.LITTLE_ENDIAN)
     fun accessor(bytes:ByteArray,component:Int,count:Int,type:String,target:Int?=null,bounds:String=""):Int {
@@ -21,24 +25,43 @@ fun writeGlb(mesh:Mesh,rig:Rig?):ByteArray {
         val b=buffer(v.size*12);v.forEach { b.putFloat(it.x).putFloat(it.y).putFloat(it.z) }
         return accessor(b.array(),5126,v.size,"VEC3",34962,bounds)
     }
-    val v=mesh.vertices
+    val original=mesh.vertices
+    val v=source.map { original[it] }
     val bounds=""","min":[${v.minOf { it.x }},${v.minOf { it.y }},${v.minOf { it.z }}],"max":[${v.maxOf { it.x }},${v.maxOf { it.y }},${v.maxOf { it.z }}]"""
     val pos=vectors(v,bounds)
-    val normals=MutableList(v.size){Vec3(0f,0f,0f)}
+    val normals=MutableList(original.size){Vec3(0f,0f,0f)}
     for(i in mesh.indices.indices step 3) {
         val a=mesh.indices[i];val b=mesh.indices[i+1];val c=mesh.indices[i+2]
-        val n=(v[b]-v[a]).cross(v[c]-v[a])
+        val n=(original[b]-original[a]).cross(original[c]-original[a])
         for(j in intArrayOf(a,b,c)) normals[j]=normals[j]+n
     }
-    val normal=vectors(normals.map { it.unit() });val color=vectors(mesh.colors)
-    val indexBuffer=buffer(mesh.indices.size*4);mesh.indices.forEach { indexBuffer.putInt(it) }
-    val indices=accessor(indexBuffer.array(),5125,mesh.indices.size,"SCALAR",34963)
-    var attributes="""{"POSITION":$pos,"NORMAL":$normal,"COLOR_0":$color"""
+    val normal=vectors(source.map { normals[it].unit() })
+    val indexBuffer=buffer(exportIndices.size*4);exportIndices.forEach { indexBuffer.putInt(it) }
+    val indices=accessor(indexBuffer.array(),5125,exportIndices.size,"SCALAR",34963)
+    var attributes="""{"POSITION":$pos,"NORMAL":$normal"""
+    var material=""
+    var primitiveMaterial=""
+    if(atlas==null) {
+        val color=vectors(mesh.colors)
+        attributes+=""" ,"COLOR_0":$color"""
+    } else {
+        val uv=buffer(atlas.uv.size*4);atlas.uv.forEach { uv.putFloat(it) }
+        val texcoord=accessor(uv.array(),5126,v.size,"VEC2",34962)
+        attributes+=""" ,"TEXCOORD_0":$texcoord"""
+        while(binary.size()%4!=0) binary.write(0)
+        val start=binary.size();binary.write(atlas.png)
+        views.add("""{"buffer":0,"byteOffset":$start,"byteLength":${atlas.png.size}}""")
+        primitiveMaterial=""","material":0"""
+        material=""","images":[{"bufferView":${views.lastIndex},"mimeType":"image/png"}],
+            "samplers":[{"magFilter":9729,"minFilter":9729,"wrapS":33071,"wrapT":33071}],
+            "textures":[{"sampler":0,"source":0}],
+            "materials":[{"pbrMetallicRoughness":{"baseColorTexture":{"index":0},"metallicFactor":0,"roughnessFactor":1}}]"""
+    }
     val nodes=mutableListOf("""{"mesh":0${if(rig!=null) ",\"skin\":0" else ""}}""")
     var skin=""
     if(rig!=null) {
-        val ids=buffer(rig.indices.size*2);rig.indices.forEach { ids.putShort(it.toShort()) }
-        val weights=buffer(rig.weights.size*4);rig.weights.forEach { weights.putFloat(it) }
+        val ids=buffer(v.size*8);for(i in source) for(k in 0..3) ids.putShort(rig.indices[i*4+k].toShort())
+        val weights=buffer(v.size*16);for(i in source) for(k in 0..3) weights.putFloat(rig.weights[i*4+k])
         val ia=accessor(ids.array(),5123,v.size,"VEC4",34962)
         val wa=accessor(weights.array(),5126,v.size,"VEC4",34962)
         attributes+=""" ,"JOINTS_0":$ia,"WEIGHTS_0":$wa"""
@@ -58,9 +81,9 @@ fun writeGlb(mesh:Mesh,rig:Rig?):ByteArray {
     val bin=binary.toByteArray()
     val json="""{"asset":{"version":"2.0","generator":"ExtrusionExtraction"},"scene":0,
         "scenes":[{"nodes":[0${if(rig!=null) ",1" else ""}]}],"nodes":[${nodes.joinToString(",")}],
-        "meshes":[{"primitives":[{"attributes":$attributes,"indices":$indices}]}],
+        "meshes":[{"primitives":[{"attributes":$attributes,"indices":$indices$primitiveMaterial}]}],
         "buffers":[{"byteLength":${bin.size}}],"bufferViews":[${views.joinToString(",")}],
-        "accessors":[${access.joinToString(",")}]$skin}""".encodeToByteArray()
+        "accessors":[${access.joinToString(",")}]$skin$material}""".encodeToByteArray()
     val padding=(4-json.size%4)%4
     return buffer(12+8+json.size+padding+8+bin.size)
         .putInt(0x46546c67).putInt(2).putInt(12+8+json.size+padding+8+bin.size)

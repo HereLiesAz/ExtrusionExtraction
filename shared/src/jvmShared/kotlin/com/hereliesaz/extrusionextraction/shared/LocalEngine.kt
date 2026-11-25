@@ -163,6 +163,9 @@ suspend fun generateLocal(model:File, images:List<ViewImage>, rig:Boolean, resol
             mesh
         } else checked
     }
+    progress("Baking base-color texture")
+    val atlas=bakeTextureAtlas(optimized) { context.ensureActive() }
+    if(atlas==null) progress("Atlas budget exceeded; exporting vertex colors")
     progress("Writing GLB")
-    writeGlb(optimized,if(rig) humanoidRig(optimized) else null)
+    writeGlb(optimized,if(rig) humanoidRig(optimized) else null,atlas)
 }
