@@ -11,8 +11,8 @@ kotlin {
             kotlin.exclude("**/App.kt", "**/Main.kt")
         }
         val test by getting {
-            kotlin.srcDirs("../shared/src/commonTest/kotlin", "../desktopApp/src/test/kotlin")
-            kotlin.include("**/ColabJobTest.kt", "**/HeadlessTest.kt")
+            kotlin.srcDirs("../shared/src/commonTest/kotlin", "../shared/src/desktopTest/kotlin", "../desktopApp/src/test/kotlin")
+            kotlin.include("**/ColabJobTest.kt", "**/HeadlessTest.kt", "**/ColabResultTest.kt")
         }
     }
 }

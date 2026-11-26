@@ -16,14 +16,8 @@ private fun atomicWrite(file:File, write:(DataOutputStream)->Unit) {
 }
 private fun File.readData()=DataInputStream(inputStream().buffered())
 private fun DataOutputStream.ints(values:IntArray) { writeInt(values.size);values.forEach(::writeInt) }
-private fun DataOutputStream.floats(values:FloatArray) { writeInt(values.size);values.forEach(::writeFloat) }
-private fun DataOutputStream.bytes(values:ByteArray) { writeInt(values.size);write(values) }
-private fun DataOutputStream.vector(v:Vec3) { writeFloat(v.x);writeFloat(v.y);writeFloat(v.z) }
 private fun DataInputStream.count():Int=readInt().also { require(it>=0){"Invalid worker data length."} }
 private fun DataInputStream.ints()=IntArray(count()){readInt()}
-private fun DataInputStream.floats()=FloatArray(count()){readFloat()}
-private fun DataInputStream.bytes()=ByteArray(count()).also { readFully(it) }
-private fun DataInputStream.vector()=Vec3(readFloat(),readFloat(),readFloat())
 
 /** Private same-version IPC; alpha bounds and crop metadata survive the process boundary. */
 internal fun writeWorkerReferences(file:File,images:List<ViewImage>,resolution:Int,mask:Boolean) =
@@ -51,38 +45,9 @@ internal fun readWorkerReferences(file:File):WorkerReferences=file.readData().us
     WorkerReferences(images,resolution,mask)
 }
 
-/** Preserve the same mesh, UVs, weights and GLB that the shared engine generated. */
-internal fun writeWorkerModel(file:File,model:GeneratedModel) = atomicWrite(file) { out ->
-    val mesh=model.mesh
-    out.writeInt(mesh.vertices.size)
-    mesh.vertices.forEach { out.vector(it) };mesh.colors.forEach { out.vector(it) }
-    out.ints(mesh.indices)
-    val rig=model.rig
-    out.writeBoolean(rig!=null)
-    if(rig!=null) {
-        out.writeInt(rig.joints.size)
-        for(joint in rig.joints) {
-            out.writeUTF(joint.name);out.writeInt(joint.parent);out.vector(joint.position)
-        }
-        out.ints(rig.indices);out.floats(rig.weights)
-    }
-    val atlas=model.atlas
-    out.writeBoolean(atlas!=null)
-    if(atlas!=null) { out.writeInt(atlas.size);out.floats(atlas.uv);out.bytes(atlas.png) }
-    out.bytes(model.glb)
-}
-internal fun readWorkerModel(file:File):GeneratedModel=file.readData().use { input ->
-    val vertices=input.count()
-    val mesh=Mesh(List(vertices){input.vector()},List(vertices){input.vector()},input.ints())
-    val rig=if(input.readBoolean()) {
-        val joints=List(input.count()){Joint(input.readUTF(),input.readInt(),input.vector())}
-        Rig(joints,input.ints(),input.floats())
-    } else null
-    val atlas=if(input.readBoolean()) {
-        val size=input.readInt();TextureAtlas(input.floats(),input.bytes(),size)
-    } else null
-    GeneratedModel(mesh,rig,atlas,input.bytes())
-}
+/** Same-version local IPC shares the model payload codec with Colab results. */
+internal fun writeWorkerModel(file:File,model:GeneratedModel)=atomicWrite(file) { writeModelPacket(it,model) }
+internal fun readWorkerModel(file:File):GeneratedModel=file.readData().use { readModelPacket(it,file.length()) }
 
 private fun writeProgress(dir:File,value:TransferProgress) = atomicWrite(File(dir,"progress")) {
     it.writeUTF(value.label);it.writeLong(value.completed);it.writeLong(value.total ?: -1)

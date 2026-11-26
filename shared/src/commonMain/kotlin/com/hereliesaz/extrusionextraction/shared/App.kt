@@ -47,6 +47,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
         selectImages:((Result<List<ViewImage>>)->Unit)->Unit,
         save:(ByteArray,(Result<Unit>)->Unit)->Unit,
         saveColabJob:(ByteArray,(Result<Unit>)->Unit)->Unit,
+        importColabResult:((Result<Map<RigMode,GeneratedModel>>)->Unit)->Unit,
         bitmap:(ViewImage)->ImageBitmap, decodeTexture:(ByteArray)->IntArray, desktop:Boolean,
         generate:suspend (List<ViewImage>,Int,Boolean,(String)->Unit)->ReconstructionSession) {
     var installed by remember { mutableStateOf(modelInstalled()) }
@@ -134,8 +135,8 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
         }
     }
     fun applyRig(mode:RigMode) {
-        val current=session ?: return
         if(variants.containsKey(mode)) { activeVariant=mode; showMesh=true; playing=false; return }
+        val current=session ?: return
         runModelOperation(if(mode==RigMode.TEMPLATE) "Humanoid rig" else "SkinTokens rig") { report ->
             val generated=current.createVariant(mode,report)
             variants=variants+(mode to generated); activeVariant=mode; showMesh=true
@@ -246,6 +247,21 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                                         uriHandler.openUri("https://colab.research.google.com/github/HereLiesAz/ExtrusionExtraction/blob/main/notebooks/ExtrusionExtraction.ipynb")
                                     } catch(e:Exception) { status="Cannot open Colab: ${e.message ?: "Browser unavailable"}" }
                                 }) { Text("Open Colab notebook") }
+                                OutlinedButton(enabled=!busy,onClick={
+                                    begin("Importing Colab result")
+                                    importColabResult { result->
+                                        busy=false;transfer=null
+                                        result.onSuccess { imported->
+                                            playing=false;session=null;variants=imported
+                                            activeVariant=RigMode.NONE;showMesh=true
+                                            generationResult="Imported Colab reconstruction"
+                                            generationFailed=false
+                                            status="Colab result imported."
+                                        }.onFailure {
+                                            status="Result import failed: "+(it.message ?: "Invalid result.")
+                                        }
+                                    }
+                                }) { Text("Import Colab result") }
                             }
                         }
                         Text("Models",style=MaterialTheme.typography.titleLarge)
@@ -359,12 +375,12 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                         Text("Divides the reconstruction volume into 3D cells. More cells can capture finer geometry but require more time and memory. This does not change image or texture resolution.",
                             style=MaterialTheme.typography.bodySmall)
                         Text("Rigging",style=MaterialTheme.typography.titleMedium)
-                        Text("Apply either rig after reconstruction. The unrigged model remains available.")
+                        Text(if(session==null && variants.isNotEmpty()) "Imported variants are ready to view and export. Run Colab again to create missing variants." else "Apply either rig after reconstruction. The unrigged model remains available.")
                         Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                             for(mode in RigMode.entries) {
                                 val available=mode!=RigMode.LEARNED || learnedReady
                                 FilterChip(selected=model!=null && activeVariant==mode,
-                                    enabled=!busy && session!=null && available,
+                                    enabled=!busy && (mode in variants || (session!=null && available)),
                                     onClick={applyRig(mode)},label={Text(when(mode){
                                         RigMode.NONE->"Unrigged"
                                         RigMode.TEMPLATE->"Humanoid T-pose"
@@ -372,7 +388,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                                     })})
                             }
                         }
-                        if(!learnedReady) Text(if(nativeReady) "Install SkinTokens to apply the learned rig." else "SkinTokens requires a compatible native runtime.",style=MaterialTheme.typography.bodySmall)
+                        if(!learnedReady && (session!=null || variants.isEmpty())) Text(if(nativeReady) "Install SkinTokens to apply the learned rig." else "SkinTokens requires a compatible native runtime.",style=MaterialTheme.typography.bodySmall)
                         val blocked=when {
                             !installed -> "Install DA3 first."
                             images.size<VIEW_COUNT -> "Add at least $VIEW_COUNT reference images."
