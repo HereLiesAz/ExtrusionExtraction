@@ -95,7 +95,7 @@ internal fun rigVisualReport(mesh: Mesh, rig: Rig, posed: List<Vec3>,
  * This emits only synthetic test assets; never user data or model weights.
  */
 internal fun retainRigDiagnostic(directory: File, name: String, bytes: ByteArray) {
-    require(name in setOf("skintokens-rig.glb","skintokens-pose.svg"))
+    require(name in setOf("skintokens-rig.glb","skintokens-pose.svg","skintokens-refined.glb","skintokens-refined.svg"))
     require(bytes.isNotEmpty() && bytes.size <= 512*1024)
     check(directory.isDirectory || directory.mkdirs())
     File(directory,name).writeBytes(bytes)
