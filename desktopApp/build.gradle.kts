@@ -25,7 +25,12 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "ExtrusionExtraction"
             packageVersion = productVersion
-            macOS { packageVersion = macInstallerVersion }
+            macOS {
+                packageVersion = macInstallerVersion
+                iconFile.set(project.file("icons/icon.icns"))
+            }
+            windows { iconFile.set(project.file("icons/icon.ico")) }
+            linux { iconFile.set(project.file("icons/icon.png")) }
             modules("java.desktop", "java.logging", "jdk.unsupported")
         }
     }
