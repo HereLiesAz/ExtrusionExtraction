@@ -29,6 +29,7 @@ class MainActivity:ComponentActivity() {
         val foreground=segmentationFile(model)
         setContent {
             val scope=rememberCoroutineScope()
+            val authorizeColab=rememberColabAuthorization(this@MainActivity)
             var modelDone by remember { mutableStateOf<((Result<Unit>)->Unit)?>(null) }
             var foregroundDone by remember { mutableStateOf<((Result<Unit>)->Unit)?>(null) }
             var modelReport by remember { mutableStateOf<((TransferProgress)->Unit)?>(null) }
@@ -135,6 +136,7 @@ class MainActivity:ComponentActivity() {
                     { bytes,done->pending=bytes;saveDone=done;jobSaver.launch("reconstruction.eejob") },
                     { done->resultDone=done;resultPicker.launch(arrayOf("*/*")) },
                     { request->openColabNotebook(this@MainActivity,request) },
+                    authorizeColab,
                     { image->Bitmap.createBitmap(image.argb,IMAGE_SIZE,IMAGE_SIZE,Bitmap.Config.ARGB_8888).asImageBitmap() },
                     { png ->
                         val decoded=BitmapFactory.decodeByteArray(png,0,png.size) ?: error("Invalid texture PNG.")

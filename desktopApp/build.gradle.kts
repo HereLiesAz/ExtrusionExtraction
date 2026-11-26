@@ -10,6 +10,7 @@ dependencies {
     implementation(project(":shared"))
     implementation(compose.desktop.currentOs)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
     testImplementation(kotlin("test"))
 }
 val state = Properties().apply { rootProject.file("version.properties").inputStream().use { load(it) } }
@@ -37,7 +38,7 @@ compose.desktop {
                 menuGroup = "ExtrusionExtraction"
             }
             linux { iconFile.set(project.file("icons/icon.png")) }
-            modules("java.desktop", "java.logging", "jdk.unsupported")
+            modules("java.desktop", "java.logging", "jdk.unsupported", "jdk.httpserver")
         }
     }
 }
