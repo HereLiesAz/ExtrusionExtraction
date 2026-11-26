@@ -150,6 +150,37 @@ class SkinTokensInferenceTest {
             assertTrue(edgeStretch.all { it.isFinite() })
             println("SkinTokens joints: ${rig.joints.size}; rotated joint: $child; max displacement: $displacement; edge-length ratio min/max: ${edgeStretch.min()}/${edgeStretch.max()}")
 
+            // Compare the same independently chosen rotation after production
+            // refinement. Original vertices and all joints must remain exact.
+            val refined=refineBends(mesh,rig)
+            assertEquals(mesh.vertices,refined.mesh.vertices.take(mesh.vertices.size))
+            assertEquals(rig.joints,refined.rig.joints)
+            val refinedPosed=refined.mesh.vertices.mapIndexed { v,p ->
+                val influence=(0..3).sumOf { k ->
+                    if(belongs(refined.rig.indices[v*4+k],child))
+                        refined.rig.weights[v*4+k].toDouble() else 0.0
+                }.toFloat()
+                val d=p-pivot
+                p*(1f-influence)+(pivot+Vec3(-d.y,d.x,d.z))*influence
+            }
+            fun strainScore(points:List<Vec3>):Double {
+                val edges=mesh.indices.toList().chunked(3).flatMap{f->
+                    (0..2).map{k->minOf(f[k],f[(k+1)%3]) to maxOf(f[k],f[(k+1)%3])}
+                }.toSet()
+                return edges.sumOf{(a,b)->
+                    val rest=mesh.vertices[a]-mesh.vertices[b];val moved=points[a]-points[b]
+                    val error=sqrt((moved.dot(moved)/rest.dot(rest)).toDouble())-1.0
+                    error*error
+                }
+            }
+            val beforeScore=strainScore(posed);val afterScore=strainScore(refinedPosed)
+            assertTrue(afterScore<=beforeScore+1e-5,"Original-edge strain regressed")
+            println("SkinTokens refinement: adjusted=${refined.adjustedVertices} splits=${refined.splitEdges} same-original-edge strain=$beforeScore -> $afterScore")
+            assertNull(firstNonAdjacentIntersection(refined.mesh))
+            val validated=repairMesh(refined.mesh)
+            assertContentEquals(refined.mesh.indices,validated.indices)
+            val refinedAtlas=assertNotNull(bakeTextureAtlas(refined.mesh))
+            val refinedBytes=writeGlb(refined.mesh,refined.rig,refinedAtlas)
             val atlas = assertNotNull(bakeTextureAtlas(mesh))
             val bytes = writeGlb(mesh,rig,atlas)
             val b = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
@@ -205,6 +236,9 @@ class SkinTokensInferenceTest {
             retainRigDiagnostic(diagnostics,"skintokens-rig.glb",bytes)
             retainRigDiagnostic(diagnostics,"skintokens-pose.svg",
                 rigVisualReport(mesh,rig,posed,posedJoints,child).encodeToByteArray())
+            retainRigDiagnostic(diagnostics,"skintokens-refined.glb",refinedBytes)
+            retainRigDiagnostic(diagnostics,"skintokens-refined.svg",
+                rigVisualReport(refined.mesh,refined.rig,refinedPosed,posedJoints,child).encodeToByteArray())
         } finally {
             folder.deleteRecursively()
         }

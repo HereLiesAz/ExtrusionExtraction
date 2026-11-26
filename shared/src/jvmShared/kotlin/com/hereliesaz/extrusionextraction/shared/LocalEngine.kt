@@ -175,12 +175,30 @@ suspend fun generateLocal(model:File, images:List<ViewImage>, rig:RigMode, resol
         progress("Binding surface-aware skin weights")
         humanoidRig(optimized,it) { context.ensureActive() }
     }
+    // Refinement happens only after learned inference: the model sees the original
+    // validated geometry. Keep the original atlas chart-size tier.
+    val faceCount=optimized.indices.size/3
+    val atlasLimit=listOf(32,16,8).map{(4096/it)*(4096/it)}
+        .firstOrNull{faceCount<=it} ?: faceCount
+    val refinement=if(rig==RigMode.LEARNED && bound!=null) {
+        progress("Refining learned joint regions")
+        val proposed=refineBends(optimized,bound,atlasLimit) { context.ensureActive() }
+        val checked=if(proposed.mesh===optimized) true else try {
+            val validated=repairMesh(proposed.mesh) { context.ensureActive() }
+            validated.vertices==proposed.mesh.vertices &&
+                validated.indices.contentEquals(proposed.mesh.indices) &&
+                firstNonAdjacentIntersection(validated) { context.ensureActive() }==null
+        } catch(_:IllegalArgumentException) { false }
+        if(checked) proposed else RefinedSkin(optimized,bound,0,0)
+    } else null
+    val finalMesh=refinement?.mesh?:optimized
+    val finalRig=refinement?.rig?:bound
     progress("Matching reference exposures")
     val photo=PhotoTexture(surface.frame,views)
-    photo.matchExposure(optimized) { context.ensureActive() }
+    photo.matchExposure(finalMesh) { context.ensureActive() }
     progress("Reprojecting calibrated photos into texture atlas")
-    val atlas=bakeTextureAtlas(optimized,photo) { context.ensureActive() }
+    val atlas=bakeTextureAtlas(finalMesh,photo) { context.ensureActive() }
     if(atlas==null) progress("Atlas budget exceeded; exporting vertex colors")
     progress("Writing GLB")
-    writeGlb(optimized,bound,atlas)
+    writeGlb(finalMesh,finalRig,atlas)
 }
