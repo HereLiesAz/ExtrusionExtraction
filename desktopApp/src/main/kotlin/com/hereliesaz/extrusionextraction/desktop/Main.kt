@@ -4,6 +4,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import com.hereliesaz.extrusionextraction.shared.*
+import androidx.compose.ui.graphics.toComposeImageBitmap
+import java.io.ByteArrayOutputStream
 import java.awt.FileDialog
 import java.awt.Frame
 import java.awt.image.BufferedImage
@@ -28,25 +30,31 @@ fun main()=application {
             return dialog.files.also { dialog.dispose() }
         }
         App({ model.isFile },
-            { done->
+            { report,done->
                 val file=choose("Select DA3 ONNX graph",FileDialog.LOAD).firstOrNull()
                 scope.launch { done(withContext(Dispatchers.IO) { runCatching {
                     require(file!=null) { "Import cancelled." }
-                    installModel(file.inputStream(),model)
+                    installModel(file.inputStream(),model) { report(TransferProgress("Importing DA3",it,file.length())) }
                 } }) }
             },
-            { withContext(Dispatchers.IO) { downloadModel(model) } },
+            { report -> withContext(Dispatchers.IO) { downloadModel(model,transfer=report) } },
             { foreground.isFile },
-            { withContext(Dispatchers.IO) { downloadSegmentation(foreground) } },
-            { done->
+            { report -> withContext(Dispatchers.IO) { downloadSegmentation(foreground,report) } },
+            { report,done->
                 val file=choose("Select U²-Net foreground graph",FileDialog.LOAD).firstOrNull()
                 scope.launch { done(withContext(Dispatchers.IO) { runCatching {
                     require(file!=null) { "Import cancelled." }
-                    installSegmentation(file.inputStream(),foreground)
+                    installSegmentation(file.inputStream(),foreground) { report(TransferProgress("Importing U²-Net",it,file.length())) }
                 } }) }
             },
             { SkinTokensEngine.available() }, { SkinTokensEngine.installed(model) },
-            { withContext(Dispatchers.IO) { val c=kotlinx.coroutines.currentCoroutineContext();SkinTokensEngine.download(model){ c.ensureActive() } } },
+            { report -> withContext(Dispatchers.IO) { val c=kotlinx.coroutines.currentCoroutineContext();SkinTokensEngine.download(model,report){ c.ensureActive() } } },
+            { report,done ->
+                val files=choose("Select all three SkinTokens GGUF files",FileDialog.LOAD,true)
+                scope.launch { done(withContext(Dispatchers.IO) { runCatching {
+                    SkinTokensEngine.importBundle(model,files.associate { file -> file.name to { file.inputStream() } },report)
+                } }) }
+            },
             { done->
                 val files=choose("Select overlapping views",FileDialog.LOAD,true)
                 scope.launch { done(withContext(Dispatchers.IO) { runCatching {
@@ -85,6 +93,12 @@ fun main()=application {
                     destination.writeBytes(bytes)
                 } }) }
             },
-            { images,rig,resolution,automaticMask,progress->generateLocal(model,images,rig,resolution,automaticMask,progress) })
+            { image ->
+                val buffer=BufferedImage(IMAGE_SIZE,IMAGE_SIZE,BufferedImage.TYPE_INT_ARGB)
+                buffer.setRGB(0,0,IMAGE_SIZE,IMAGE_SIZE,image.argb,0,IMAGE_SIZE)
+                val encoded=ByteArrayOutputStream().also { ImageIO.write(buffer,"png",it) }.toByteArray()
+                org.jetbrains.skia.Image.makeFromEncoded(encoded).toComposeImageBitmap()
+            },true,
+            { images,rig,resolution,automaticMask,progress,preview->generateLocal(model,images,rig,resolution,automaticMask,progress,preview) })
     }
 }

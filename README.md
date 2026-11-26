@@ -4,6 +4,8 @@ Reconstruct textured, rigged 3D models from overlapping reference images and exp
 
 ## Use
 
+The top status remains visible during operations. Model transfers report bytes processed; inference reports its current stage and available work counts. The Models section provides acquisition controls for each stage. Drag reference thumbnails by their handles to reorder, or play the ordered frames in the persistent preview. Generated geometry appears as a rotatable wireframe; exported GLB retains the full mesh and textures.
+
 On Windows, install the MSI and launch **ExtrusionExtraction** from the Start menu.
 
 1. Select **Download model**, or import the exact full-precision `model.onnx` from [DA3-Base 4-view ONNX](https://huggingface.co/Heliosoph/da3-base-4view-onnx/blob/58036ce15ce3510c89d954820f15725a4c896fc8/model.onnx). Both paths verify SHA-256 before opening the graph. The graph is not bundled.
