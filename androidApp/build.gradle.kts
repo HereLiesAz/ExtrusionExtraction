@@ -6,6 +6,12 @@ plugins {
 }
 val state = Properties().apply { rootProject.file("version.properties").inputStream().use { load(it) } }
 val parts = listOf("Major", "Minor", "Patch", "Build").map { state.getProperty("version" + it).toInt() }
+// Central prereleases use the monotonically increasing desktop workflow run
+// number as Android's upgrade code. Local builds retain the checked-in baseline.
+val releaseCode = providers.gradleProperty("eeReleaseVersionCode").orNull?.let {
+    it.toIntOrNull()?.takeIf { code -> code in 1..2100000000 }
+        ?: error("eeReleaseVersionCode must be a positive Android version code")
+}
 android {
     namespace = "com.hereliesaz.extrusionextraction"
     compileSdk = 35
@@ -13,7 +19,7 @@ android {
         applicationId = "com.hereliesaz.extrusionextraction"
         minSdk = 28
         targetSdk = 35
-        versionCode = parts[3] + 1
+        versionCode = releaseCode ?: (parts[3] + 1)
         versionName = parts.joinToString(".")
     }
     buildFeatures { compose = true }
