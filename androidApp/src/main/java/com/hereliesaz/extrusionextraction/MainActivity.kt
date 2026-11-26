@@ -97,7 +97,7 @@ class MainActivity:ComponentActivity() {
                     } })
                 }
             }
-            val saver=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("model/gltf-binary")) { uri ->
+            fun completeExport(uri:android.net.Uri?) {
                 val done=saveDone; val bytes=pending;saveDone=null;pending=null
                 scope.launch {
                     done?.invoke(withContext(Dispatchers.IO) { runCatching {
@@ -106,6 +106,8 @@ class MainActivity:ComponentActivity() {
                     } })
                 }
             }
+            val saver=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("model/gltf-binary")) { completeExport(it) }
+            val jobSaver=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { completeExport(it) }
             Box(Modifier.windowInsetsPadding(WindowInsets.safeDrawing)) {
                 App({ model.isFile },
                     { report,done->modelReport=report;modelDone=done;modelPicker.launch(arrayOf("*/*")) },
@@ -118,6 +120,7 @@ class MainActivity:ComponentActivity() {
                     { report,done->learnedReport=report;learnedDone=done;learnedPicker.launch(arrayOf("*/*")) },
                     { done->imagesDone=done;imagesPicker.launch(arrayOf("image/*")) },
                     { bytes,done->pending=bytes;saveDone=done;saver.launch("model.glb") },
+                    { bytes,done->pending=bytes;saveDone=done;jobSaver.launch("reconstruction.eejob") },
                     { image->Bitmap.createBitmap(image.argb,IMAGE_SIZE,IMAGE_SIZE,Bitmap.Config.ARGB_8888).asImageBitmap() },
                     { png ->
                         val decoded=BitmapFactory.decodeByteArray(png,0,png.size) ?: error("Invalid texture PNG.")

@@ -228,3 +228,6 @@ suspend fun generateLocal(model:File, images:List<ViewImage>, resolution:Int,
     }
     ReconstructionSession(buildVariant(RigMode.NONE,progress),buildVariant)
 }
+
+/** Force ONNX native runtime initialization without acquiring model weights. Used by packaged worker smoke checks. */
+fun checkReconstructionRuntime() { OrtEnvironment.getEnvironment() }

@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
@@ -25,11 +26,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-/** Measured bytes, or an indeterminate operation when the source has no known length. */
-data class TransferProgress(val label:String, val completed:Long, val total:Long?) {
-    val fraction:Float? get() = total?.takeIf { it>0 }?.let { (completed.toDouble()/it).coerceIn(0.0,1.0).toFloat() }
-}
 
 /** Move a reference by identity, retaining the list object when no move is possible. */
 internal fun moveReference(images:List<ViewImage>,image:ViewImage,delta:Int):List<ViewImage> {
@@ -50,6 +46,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
         selectLearned:((TransferProgress)->Unit,(Result<Unit>)->Unit)->Unit,
         selectImages:((Result<List<ViewImage>>)->Unit)->Unit,
         save:(ByteArray,(Result<Unit>)->Unit)->Unit,
+        saveColabJob:(ByteArray,(Result<Unit>)->Unit)->Unit,
         bitmap:(ViewImage)->ImageBitmap, decodeTexture:(ByteArray)->IntArray, desktop:Boolean,
         generate:suspend (List<ViewImage>,Int,Boolean,(String)->Unit)->ReconstructionSession) {
     var installed by remember { mutableStateOf(modelInstalled()) }
@@ -58,6 +55,8 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
     val nativeReady=remember { learnedAvailable() }
     val nativeIssue=remember { learnedRuntimeIssue() }
     var automaticMask by remember { mutableStateOf(true) }
+    var colabTemplate by remember { mutableStateOf(false) }
+    var colabLearned by remember { mutableStateOf(false) }
     var images by remember { mutableStateOf(emptyList<ViewImage>()) }
     var selected by remember { mutableStateOf<ViewImage?>(null) }
     var edgeFragments by remember { mutableStateOf(emptyMap<ViewImage,EdgeFragments>()) }
@@ -79,6 +78,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
     var status by remember { mutableStateOf("Ready") }
     var transfer by remember { mutableStateOf<TransferProgress?>(null) }
     val scope=rememberCoroutineScope()
+    val uriHandler=LocalUriHandler.current
     DisposableEffect(session) {
         val current=session
         onDispose { current?.close?.invoke() }
@@ -212,6 +212,42 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                 }
                 val controls:@Composable (Modifier)->Unit={ modifier ->
                     Column(modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                                Text("Colab · Experimental",style=MaterialTheme.typography.titleMedium)
+                                Text("Use your own Google account. Export an ordered job and upload it in the notebook. Local reconstruction remains available.",
+                                    style=MaterialTheme.typography.bodySmall)
+                                Text("Remote rig variants (unrigged always included)",style=MaterialTheme.typography.labelMedium)
+                                Row(verticalAlignment=Alignment.CenterVertically) {
+                                    Checkbox(checked=colabTemplate,onCheckedChange={colabTemplate=it},enabled=!busy)
+                                    Text("Humanoid T-pose")
+                                }
+                                Row(verticalAlignment=Alignment.CenterVertically) {
+                                    Checkbox(checked=colabLearned,onCheckedChange={colabLearned=it},enabled=!busy)
+                                    Text("SkinTokens")
+                                }
+                                OutlinedButton(enabled=!busy && images.size>=VIEW_COUNT,onClick={
+                                    val job=ColabJob(images.toList(),resolution.toInt(),automaticMask,colabTemplate,colabLearned)
+                                    begin("Preparing Colab job")
+                                    scope.launch {
+                                        try {
+                                            val bytes=withContext(Dispatchers.Default){encodeColabJob(job)}
+                                            saveColabJob(bytes){result->
+                                                busy=false
+                                                status=result.fold({"Job saved. Open Colab and upload the .eejob file."},{it.message ?: "Job export failed."})
+                                            }
+                                        } catch(e:CancellationException) { busy=false;throw e }
+                                        catch(e:Exception) {busy=false;status=e.message ?: "Job export failed."}
+                                        catch(e:OutOfMemoryError) {busy=false;status="Not enough memory to export job."}
+                                    }
+                                }) { Text("Export Colab job") }
+                                OutlinedButton(enabled=!busy,onClick={
+                                    try {
+                                        uriHandler.openUri("https://colab.research.google.com/github/HereLiesAz/ExtrusionExtraction/blob/main/notebooks/ExtrusionExtraction.ipynb")
+                                    } catch(e:Exception) { status="Cannot open Colab: ${e.message ?: "Browser unavailable"}" }
+                                }) { Text("Open Colab notebook") }
+                            }
+                        }
                         Text("Models",style=MaterialTheme.typography.titleLarge)
                         ModelRow("DA3 Base","Depth and camera estimation · approximately 413 MB",
                             if(installed) "Installed" else "Required",!busy,!busy,

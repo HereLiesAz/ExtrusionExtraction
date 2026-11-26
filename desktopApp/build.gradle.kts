@@ -10,6 +10,7 @@ dependencies {
     implementation(project(":shared"))
     implementation(compose.desktop.currentOs)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
+    testImplementation(kotlin("test"))
 }
 val state = Properties().apply { rootProject.file("version.properties").inputStream().use { load(it) } }
 // The product version remains canonical. macOS requires a positive installer major.
