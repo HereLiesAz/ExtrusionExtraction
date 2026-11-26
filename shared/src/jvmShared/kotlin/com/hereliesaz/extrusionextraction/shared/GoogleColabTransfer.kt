@@ -59,6 +59,7 @@ class GoogleColabTransfer(private val accessToken:String):ColabTransfer {
     }
 
     private fun api(path:String):JsonObject=request(API+path,"Authorization","Bearer $accessToken") {
+        if(path.startsWith("runtimes/") && it.responseCode==404) throw ColabSessionUnavailable("The selected runtime is no longer available. It may have expired or disconnected.")
         status(it)
         it.inputStream.use { input->Json.parseToJsonElement(boundedText(input,1024*1024)).jsonObject }
     }
@@ -84,11 +85,61 @@ class GoogleColabTransfer(private val accessToken:String):ColabTransfer {
     private fun verify(proxy:Proxy,code:String):String {
         val path=colabPairPath(code)
         val marker=request(proxy.url+"/files/$path/pair.txt",PROXY_HEADER,proxy.token) {
+            if(it.responseCode==404) throw ColabSessionUnavailable("The notebook pairing is no longer available in this runtime.")
             status(it)
             it.inputStream.use { input->boundedText(input,128) }
         }
         require(marker=="EEPAIR1:$code") { "Notebook pairing code does not match this runtime." }
         return path
+    }
+
+    private fun entries(p:Proxy,path:String):List<String> =
+        request(p.url+"/api/contents/$path",PROXY_HEADER,p.token) {
+            status(it)
+            it.inputStream.use { stream->
+                Json.parseToJsonElement(boundedText(stream,1024*1024)).jsonObject
+                    .getValue("content").jsonArray.map { entry->entry.jsonObject.getValue("name").jsonPrimitive.content }
+            }
+        }
+
+    private fun readSnapshot(p:Proxy,path:String,code:String):ColabSnapshot {
+        val record=request(p.url+"/files/$path/status.json",PROXY_HEADER,p.token) {
+            if(it.responseCode==404) error("This notebook does not support session status. Open the current notebook or use manual transfer.")
+            status(it)
+            it.inputStream.use { stream->Json.parseToJsonElement(boundedText(stream,8192)).jsonObject }
+        }
+        require(record["version"]?.jsonPrimitive?.intOrNull==1 &&
+            record["pair"]?.jsonPrimitive?.content==code) { "Invalid notebook status record." }
+        val reported=ColabJobState.valueOf(record.getValue("state").jsonPrimitive.content)
+        val timestamp=record.getValue("reportedAt").jsonPrimitive.content
+        require(timestamp.length<=40) { "Invalid status timestamp." }
+        val detail=record.getValue("detail").jsonPrimitive.content.take(240)
+        val names=entries(p,path)
+        return observedColabSnapshot(reported,timestamp,detail,names)
+    }
+
+    override suspend fun snapshot(runtime:ColabRuntime,code:String):ColabSnapshot=withContext(Dispatchers.IO) {
+        colabPairPath(code)
+        val p=proxy(runtime)
+        readSnapshot(p,verify(p,code),code)
+    }
+
+    override suspend fun cancel(runtime:ColabRuntime,code:String) {
+        withContext(Dispatchers.IO) {
+            colabPairPath(code)
+            val p=proxy(runtime)
+            val path=verify(p,code)
+            val current=readSnapshot(p,path,code)
+            if(current.cancelRequested) return@withContext
+            require(current.canCancel) { "This notebook has no cancellable job." }
+            val bytes=("{\"type\":\"file\",\"format\":\"text\",\"content\":\"EECANCEL1:$code\"}").encodeToByteArray()
+            request(p.url+"/api/contents/$path/cancel.txt",PROXY_HEADER,p.token,"PUT",body={ connection->
+                connection.doOutput=true
+                connection.setRequestProperty("Content-Type","application/json")
+                connection.setFixedLengthStreamingMode(bytes.size)
+                connection.outputStream.use{it.write(bytes)}
+            }) { status(it,setOf(200,201));Unit }
+        }
     }
 
     override suspend fun runtimes():List<ColabRuntime> = withContext(Dispatchers.IO) {
@@ -116,15 +167,8 @@ class GoogleColabTransfer(private val accessToken:String):ColabTransfer {
             val path=verify(p,code)
             // Never overwrite another submission. Even concurrent clients use distinct UUIDs;
             // the notebook rejects ambiguous multiple submissions rather than choosing one.
-            val entries=request(p.url+"/api/contents/$path",PROXY_HEADER,p.token) {
-                status(it)
-                it.inputStream.use { stream->
-                    Json.parseToJsonElement(boundedText(stream,1024*1024)).jsonObject
-                        .getValue("content").jsonArray.map { entry->entry.jsonObject.getValue("name").jsonPrimitive.content }
-                }
-            }
-            require(entries.none { it=="claimed.eejob" || it.startsWith("job-") && it.endsWith(".eejob") }) {
-                "This pairing already has a job. Create a new notebook pairing."
+            require(readSnapshot(p,path,code).canSubmit) {
+                "This pairing is not accepting another job. Create a new notebook pairing."
             }
             val filename="job-"+java.util.UUID.randomUUID().toString()+".eejob"
             val bytes=encodeColabJob(job)
