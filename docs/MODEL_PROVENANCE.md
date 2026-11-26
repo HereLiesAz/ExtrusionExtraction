@@ -18,7 +18,7 @@ Graph: u2netp.onnx; 4,574,861 bytes. Published SHA-256:
 
 Original weights: [U²-Net](https://github.com/xuebinqin/U-2-Net), Apache-2.0; ONNX asset distributed by [rembg](https://github.com/danielgatis/rembg/releases/tag/v0.0.0), MIT code. Credit: Qin et al., *U²-Net: Going Deeper with Nested U-Structure for Salient Object Detection*, Pattern Recognition 106 (2020), 107404.
 
-Input float32 [1,3,320,320], RGB NCHW, maximum-intensity scaling and ImageNet normalization. Output zero is float32 [1,1,320,320] fused saliency. The app uses shared bilinear interpolation (rather than Lanczos), min–max normalization, and rejects degenerate predictions. Only the model download accesses the network. Model files are not redistributed.
+Input float32 [1,3,320,320], RGB NCHW, maximum-intensity scaling and ImageNet normalization. Output zero is float32 [1,1,320,320] fused saliency. The app uses shared bilinear interpolation (rather than Lanczos), min–max normalization, and rejects degenerate predictions. Model files are not redistributed.
 
 ## SkinTokens learned rigging
 
