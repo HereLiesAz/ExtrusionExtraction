@@ -25,6 +25,7 @@ internal data class RefinedSkin(val mesh:Mesh,val rig:Rig,val adjustedVertices:I
  */
 internal fun refineBends(mesh:Mesh,rig:Rig,maxTriangles:Int=Int.MAX_VALUE,
                          checkpoint:()->Unit={}):RefinedSkin {
+    require(maxTriangles>=0)
     require(rig.indices.size==mesh.vertices.size*4 && rig.weights.size==rig.indices.size)
     require(rig.joints.isNotEmpty() && rig.joints.first().parent==-1)
     require(rig.joints.indices.drop(1).all{rig.joints[it].parent in 0 until it})
@@ -147,13 +148,14 @@ internal fun refineBends(mesh:Mesh,rig:Rig,maxTriangles:Int=Int.MAX_VALUE,
             abs(mass(a)-mass(b))
         }.toFloat()*.5f
     }
-    val ranked=if(splitBudget==0) emptyList() else edges.entries.mapNotNull{(e,fs)->
+    val ranked=if(splitBudget==0) emptyList() else edges.entries.mapIndexedNotNull{i,(e,fs)->
+        if(i%1024==0) checkpoint()
         val delta=vertices[e.first]-vertices[e.second]
         val length=sqrt(delta.dot(delta))
         val variation=gradient(e.first,e.second)
         if(fs.size==2 && length>=.04f && variation>=.35f) Triple(e,fs,length*variation) else null
     }.sortedWith(compareByDescending<Triple<Pair<Int,Int>,MutableList<Int>,Float>>{it.third}
-        .thenBy{it.first.first}.thenBy{it.first.second})
+        .thenBy{it.first.first}.thenBy{it.first.second}).take(4096)
     for((e,fs,_) in ranked) {
         if(splits.size>=splitBudget) break
         checkpoint()
