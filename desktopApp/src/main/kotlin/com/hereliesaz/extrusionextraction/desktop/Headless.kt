@@ -72,20 +72,48 @@ fun main(args: Array<String>) = runBlocking {
             report("Exported $name")
         } finally { Files.deleteIfExists(temporary) }
     }
-    val session = generateLocal(model, images, cells, mask, ::report)
-    publish("unrigged.glb", session.base.glb)
-    val failures = runRigVariants(modes) { mode ->
-        if (mode == RigMode.LEARNED) {
-            check(SkinTokensEngine.available()) { "SkinTokens native runtime unavailable." }
-            if (!SkinTokensEngine.installed(model)) {
-                report("Acquiring verified SkinTokens models")
-                SkinTokensEngine.download(model, ::transfer)
-            }
-        }
-        val result = session.createVariant(mode, ::report)
-        publish(if (mode == RigMode.TEMPLATE) "humanoid.glb" else "skintokens.glb", result.glb)
+    // Keep completed payloads on disk, not all meshes in memory. Replace the public bundle
+    // only after a complete new variant has been staged; older successful results survive.
+    val staging=Files.createTempDirectory(output.toPath(),".packets-").toFile()
+    val packets=linkedMapOf<RigMode,File>()
+    val bundleFailures=mutableListOf<String>()
+    fun publishResult(mode:RigMode,model:GeneratedModel) {
+        val packet=File(staging,mode.name)
+        val temporary=File(staging,"bundle.part")
+        try {
+            java.io.DataOutputStream(packet.outputStream().buffered()).use { writeModelPacket(it,model) }
+            val proposed=packets+(mode to packet)
+            temporary.outputStream().buffered().use { writeColabResult(it,proposed) }
+            Files.move(temporary.toPath(),File(output,"reconstruction.eeresult").toPath(),
+                StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING)
+            packets[mode]=packet
+            report("Updated importable reconstruction.eeresult")
+        } catch(e:Exception) {
+            packet.delete()
+            val message="Result bundle $mode: ${e.message ?: e.javaClass.simpleName}"
+            bundleFailures.add(message);System.err.println(message)
+        } finally { temporary.delete() }
     }
-    check(failures.isEmpty()) { failures.joinToString("; ") }
+    val failures=try {
+        val session=generateLocal(model,images,cells,mask,::report)
+        try {
+            publish("unrigged.glb",session.base.glb)
+            publishResult(RigMode.NONE,session.base)
+            runRigVariants(modes) { mode->
+                if(mode==RigMode.LEARNED) {
+                    check(SkinTokensEngine.available()) { "SkinTokens native runtime unavailable." }
+                    if(!SkinTokensEngine.installed(model)) {
+                        report("Acquiring verified SkinTokens models")
+                        SkinTokensEngine.download(model,::transfer)
+                    }
+                }
+                val variant=session.createVariant(mode,::report)
+                publish(if(mode==RigMode.TEMPLATE)"humanoid.glb" else "skintokens.glb",variant.glb)
+                publishResult(mode,variant)
+            }
+        } finally { session.close() }
+    } finally { staging.deleteRecursively() }
+    check(failures.isEmpty() && bundleFailures.isEmpty()) { (failures+bundleFailures).joinToString("; ") }
 }
 
 /** Independent variants preserve completed exports. Cancellation is never treated as an ordinary failure. */

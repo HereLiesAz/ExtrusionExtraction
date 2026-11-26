@@ -100,6 +100,18 @@ fun main(args:Array<String>) {
                     destination.writeBytes(bytes)
                 } }) }
             },
+            { done->
+                val file=choose("Import Colab result",FileDialog.LOAD).firstOrNull()
+                scope.launch {
+                    done(withContext(Dispatchers.IO) {
+                        runCatching {
+                            require(file!=null) { "Import cancelled." }
+                            require(file.length() in 1..MAX_COLAB_RESULT_BYTES) { "Result exceeds import budget." }
+                            file.inputStream().buffered().use(::readColabResult)
+                        }
+                    })
+                }
+            },
             { image ->
                 val buffer=BufferedImage(IMAGE_SIZE,IMAGE_SIZE,BufferedImage.TYPE_INT_ARGB)
                 buffer.setRGB(0,0,IMAGE_SIZE,IMAGE_SIZE,image.argb,0,IMAGE_SIZE)

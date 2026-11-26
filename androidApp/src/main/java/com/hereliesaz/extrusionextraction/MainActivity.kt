@@ -36,6 +36,7 @@ class MainActivity:ComponentActivity() {
             var learnedReport by remember { mutableStateOf<((TransferProgress)->Unit)?>(null) }
             var learnedDone by remember { mutableStateOf<((Result<Unit>)->Unit)?>(null) }
             var imagesDone by remember { mutableStateOf<((Result<List<ViewImage>>)->Unit)?>(null) }
+            var resultDone by remember { mutableStateOf<((Result<Map<RigMode,GeneratedModel>>)->Unit)?>(null) }
             var saveDone by remember { mutableStateOf<((Result<Unit>)->Unit)?>(null) }
             var pending by remember { mutableStateOf<ByteArray?>(null) }
             val modelPicker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -106,6 +107,17 @@ class MainActivity:ComponentActivity() {
                     } })
                 }
             }
+            val resultPicker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                val done=resultDone;resultDone=null
+                scope.launch {
+                    done?.invoke(withContext(Dispatchers.IO) {
+                        runCatching {
+                            require(uri!=null) { "Import cancelled." }
+                            (contentResolver.openInputStream(uri) ?: error("Cannot open result.")).buffered().use(::readColabResult)
+                        }
+                    })
+                }
+            }
             val saver=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("model/gltf-binary")) { completeExport(it) }
             val jobSaver=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { completeExport(it) }
             Box(Modifier.windowInsetsPadding(WindowInsets.safeDrawing)) {
@@ -121,6 +133,7 @@ class MainActivity:ComponentActivity() {
                     { done->imagesDone=done;imagesPicker.launch(arrayOf("image/*")) },
                     { bytes,done->pending=bytes;saveDone=done;saver.launch("model.glb") },
                     { bytes,done->pending=bytes;saveDone=done;jobSaver.launch("reconstruction.eejob") },
+                    { done->resultDone=done;resultPicker.launch(arrayOf("*/*")) },
                     { image->Bitmap.createBitmap(image.argb,IMAGE_SIZE,IMAGE_SIZE,Bitmap.Config.ARGB_8888).asImageBitmap() },
                     { png ->
                         val decoded=BitmapFactory.decodeByteArray(png,0,png.size) ?: error("Invalid texture PNG.")
