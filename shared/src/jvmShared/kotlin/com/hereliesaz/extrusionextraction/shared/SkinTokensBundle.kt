@@ -21,7 +21,7 @@ internal val skinTokensComponents = listOf(
  * The caller owns both streams; no partially verified data may be published.
  */
 internal fun verifySkinTokensStream(input:InputStream,component:SkinTokensComponent,
-                                    output:OutputStream?=null,checkpoint:()->Unit={}) {
+                                    output:OutputStream?=null,transfer:(Long)->Unit={},checkpoint:()->Unit={}) {
     val digest=MessageDigest.getInstance("SHA-256")
     val buffer=ByteArray(1024*1024)
     var total=0L
@@ -33,6 +33,7 @@ internal fun verifySkinTokensStream(input:InputStream,component:SkinTokensCompon
         require(total<=component.bytes) { "GGUF length mismatch: ${component.name}" }
         digest.update(buffer,0,n)
         output?.write(buffer,0,n)
+        transfer(total)
     }
     require(total==component.bytes) { "GGUF length mismatch: ${component.name}" }
     val actual=digest.digest().joinToString(""){"%02x".format(it.toInt() and 255)}

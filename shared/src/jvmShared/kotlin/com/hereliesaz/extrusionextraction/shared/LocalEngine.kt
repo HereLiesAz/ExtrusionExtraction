@@ -19,8 +19,8 @@ const val MODEL_URL = "https://huggingface.co/Heliosoph/da3-base-4view-onnx/reso
 const val MODEL_SHA256 = "dcc419e93adb96dc2f09fb1af3cf6da6a551dc37645d4e4d355cb5b61161f8cd"
 
 /** Copy and verify a graph before invoking ONNX Runtime on untrusted bytes. */
-fun installModel(input:InputStream,destination:File) =
-    installVerifiedGraph(input,destination,MODEL_SHA256,600_000_000) { session ->
+fun installModel(input:InputStream,destination:File,transfer:(Long)->Unit={}) =
+    installVerifiedGraph(input,destination,MODEL_SHA256,600_000_000,transfer) { session ->
         require(session.inputNames==setOf("images") &&
             session.outputNames.containsAll(setOf("depth","depth_conf","intrinsics","extrinsics"))) {
             "Select the DA3-Base four-view ONNX graph."
@@ -29,7 +29,7 @@ fun installModel(input:InputStream,destination:File) =
 
 /** Shared streaming verification and atomic installation contract for all model stages. */
 internal fun installVerifiedGraph(input:InputStream,destination:File,sha256:String,maxBytes:Long,
-                                  validate:(OrtSession)->Unit) {
+                                  transfer:(Long)->Unit={},validate:(OrtSession)->Unit) {
     destination.parentFile?.mkdirs()
     val digest=MessageDigest.getInstance("SHA-256")
     val temporary=File.createTempFile("model-", ".part",destination.parentFile)
@@ -37,13 +37,16 @@ internal fun installVerifiedGraph(input:InputStream,destination:File,sha256:Stri
         input.use { source -> temporary.outputStream().use { output ->
             val buffer=ByteArray(65536)
             var total=0L
+            var reported=0L
             while(true) {
                 val count=source.read(buffer);if(count<0) break
                 total+=count;require(total<=maxBytes) { "ONNX graph exceeds size limit." }
                 digest.update(buffer,0,count)
                 output.write(buffer,0,count)
+                if(total-reported>=1024*1024) { transfer(total);reported=total }
             }
             require(total>0) { "Empty model." }
+            transfer(total)
         } }
         require(digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) } == sha256) {
             "Model checksum mismatch. Use the pinned graph."
@@ -62,15 +65,16 @@ internal fun installVerifiedGraph(input:InputStream,destination:File,sha256:Stri
 }
 
 /** Explicit one-time model download. Only HTTPS redirects are followed; generation is offline. */
-fun downloadModel(destination:File, progress:(String)->Unit = {}) {
-    downloadVerifiedGraph(MODEL_URL) { input ->
+fun downloadModel(destination:File, progress:(String)->Unit = {},transfer:(TransferProgress)->Unit={}) {
+    var length:Long?=null
+    downloadVerifiedGraph(MODEL_URL,{length=it}) { input ->
         progress("Downloading and verifying DA3 model")
-        installModel(input,destination)
+        installModel(input,destination) { bytes -> transfer(TransferProgress("Downloading DA3",bytes,length)) }
     }
 }
 
 /** Shared explicit HTTPS downloader; the caller supplies a checksum-verifying installer. */
-internal fun downloadVerifiedGraph(source:String,install:(InputStream)->Unit) {
+internal fun downloadVerifiedGraph(source:String,onLength:(Long?)->Unit={},install:(InputStream)->Unit) {
     var url=URI(source).toURL()
     repeat(8) {
         require(url.protocol=="https") { "Insecure model redirect rejected." }
@@ -85,6 +89,7 @@ internal fun downloadVerifiedGraph(source:String,install:(InputStream)->Unit) {
                     ?: error("Missing download redirect.")).toURL()
             } else {
                 check(status==200) { "Model download failed: HTTP $status" }
+                onLength(connection.contentLengthLong.takeIf { it>0 })
                 connection.inputStream.use(install)
                 return
             }
@@ -94,11 +99,10 @@ internal fun downloadVerifiedGraph(source:String,install:(InputStream)->Unit) {
 }
 
 /** Both platforms run identical local inference windows, alignment, fusion and skin export. */
-suspend fun generateLocal(model:File, images:List<ViewImage>, rig:RigMode, resolution:Int,
+suspend fun generateLocal(model:File, images:List<ViewImage>, resolution:Int,
                           automaticMask:Boolean,
-                          progress:(String)->Unit):ByteArray = withContext(Dispatchers.Default) {
+                          progress:(String)->Unit):ReconstructionSession = withContext(Dispatchers.Default) {
     require(model.isFile) { "Import the DA3 four-view model first." }
-    require(rig!=RigMode.LEARNED || SkinTokensEngine.installed(model)) { "Verified learned rig model is unavailable." }
     val windows=viewWindows(images.size)
     val context=currentCoroutineContext()
     // Keep original RGB for DA3 pose estimation; use the learned alpha only for geometry.
@@ -139,6 +143,7 @@ suspend fun generateLocal(model:File, images:List<ViewImage>, rig:RigMode, resol
                     }
                 }
                 views=if(views.isEmpty()) local else appendWindow(views,window.first,local)
+                progress("Depth and cameras: ${windowIndex+1}/${windows.size} windows complete")
             }
         }
     }
@@ -150,8 +155,13 @@ suspend fun generateLocal(model:File, images:List<ViewImage>, rig:RigMode, resol
     progress("Checking geometric intersections")
     val collision=firstNonAdjacentIntersection(mesh) { context.ensureActive() }
     require(collision==null) { "Intersecting non-adjacent faces: "+collision+". Improve reference coverage." }
-    // Establish the provisional skeleton before simplification so joints do not drift.
-    val joints=if(rig==RigMode.TEMPLATE) humanoidJoints(mesh) else null
+    val calibratedViews=views
+    val buildVariant:suspend (RigMode,(String)->Unit)->GeneratedModel={ rig, progress ->
+        withContext(Dispatchers.Default) {
+            val context=currentCoroutineContext()
+            require(rig!=RigMode.LEARNED || SkinTokensEngine.installed(model)) { "Verified learned rig model is unavailable." }
+            // Establish the provisional skeleton before simplification so joints do not drift.
+            val joints=if(rig==RigMode.TEMPLATE) humanoidJoints(mesh) else null
     val protected=joints?.let(::jointProtection) ?: { _:Vec3 -> false }
     progress(if(joints!=null) "Simplifying while preserving joint neighborhoods" else "Simplifying planar regions")
     // Learned joint locations are unknown until inference; retain original detail.
@@ -194,11 +204,14 @@ suspend fun generateLocal(model:File, images:List<ViewImage>, rig:RigMode, resol
     val finalMesh=refinement?.mesh?:optimized
     val finalRig=refinement?.rig?:bound
     progress("Matching reference exposures")
-    val photo=PhotoTexture(surface.frame,views)
+    val photo=PhotoTexture(surface.frame,calibratedViews)
     photo.matchExposure(finalMesh) { context.ensureActive() }
     progress("Reprojecting calibrated photos into texture atlas")
     val atlas=bakeTextureAtlas(finalMesh,photo) { context.ensureActive() }
     if(atlas==null) progress("Atlas budget exceeded; exporting vertex colors")
     progress("Writing GLB")
-    writeGlb(finalMesh,finalRig,atlas)
+    GeneratedModel(finalMesh,finalRig,atlas,writeGlb(finalMesh,finalRig,atlas))
+        }
+    }
+    ReconstructionSession(buildVariant(RigMode.NONE,progress),buildVariant)
 }

@@ -2,6 +2,7 @@ package com.hereliesaz.extrusionextraction
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import androidx.compose.ui.graphics.asImageBitmap
 import android.os.Bundle
 import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
@@ -30,26 +31,44 @@ class MainActivity:ComponentActivity() {
             val scope=rememberCoroutineScope()
             var modelDone by remember { mutableStateOf<((Result<Unit>)->Unit)?>(null) }
             var foregroundDone by remember { mutableStateOf<((Result<Unit>)->Unit)?>(null) }
+            var modelReport by remember { mutableStateOf<((TransferProgress)->Unit)?>(null) }
+            var foregroundReport by remember { mutableStateOf<((TransferProgress)->Unit)?>(null) }
+            var learnedReport by remember { mutableStateOf<((TransferProgress)->Unit)?>(null) }
+            var learnedDone by remember { mutableStateOf<((Result<Unit>)->Unit)?>(null) }
             var imagesDone by remember { mutableStateOf<((Result<List<ViewImage>>)->Unit)?>(null) }
             var saveDone by remember { mutableStateOf<((Result<Unit>)->Unit)?>(null) }
             var pending by remember { mutableStateOf<ByteArray?>(null) }
             val modelPicker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
                 val done=modelDone;modelDone=null
+                val report=modelReport;modelReport=null
                 scope.launch {
                     done?.invoke(withContext(Dispatchers.IO) { runCatching {
                         require(uri!=null) { "Import cancelled." }
-                        installModel(contentResolver.openInputStream(uri) ?: error("Cannot open model."),model)
+                        installModel(contentResolver.openInputStream(uri) ?: error("Cannot open model."),model) { report?.invoke(TransferProgress("Importing DA3",it,null)) }
                     } })
                 }
             }
             val foregroundPicker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
                 val done=foregroundDone;foregroundDone=null
+                val report=foregroundReport;foregroundReport=null
                 scope.launch {
                     done?.invoke(withContext(Dispatchers.IO) { runCatching {
                         require(uri!=null) { "Import cancelled." }
-                        installSegmentation(contentResolver.openInputStream(uri) ?: error("Cannot open model."),foreground)
+                        installSegmentation(contentResolver.openInputStream(uri) ?: error("Cannot open model."),foreground) { report?.invoke(TransferProgress("Importing U²-Net",it,4_574_861L)) }
                     } })
                 }
+            }
+            val learnedPicker=rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+                val done=learnedDone;learnedDone=null
+                val report=learnedReport;learnedReport=null
+                scope.launch { done?.invoke(withContext(Dispatchers.IO) { runCatching {
+                    val files=uris.associate { uri ->
+                        val name=contentResolver.query(uri,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)
+                            ?.use { if(it.moveToFirst()) it.getString(0) else null } ?: error("Missing filename.")
+                        name to { contentResolver.openInputStream(uri) ?: error("Cannot open $name") }
+                    }
+                    SkinTokensEngine.importBundle(model,files) { report?.invoke(it) }
+                } }) }
             }
             val imagesPicker=rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
                 val done=imagesDone;imagesDone=null
@@ -90,16 +109,24 @@ class MainActivity:ComponentActivity() {
             }
             Box(Modifier.windowInsetsPadding(WindowInsets.safeDrawing)) {
                 App({ model.isFile },
-                    { done->modelDone=done;modelPicker.launch(arrayOf("*/*")) },
-                    { withContext(Dispatchers.IO) { downloadModel(model) } },
+                    { report,done->modelReport=report;modelDone=done;modelPicker.launch(arrayOf("*/*")) },
+                    { report->withContext(Dispatchers.IO) { downloadModel(model,transfer=report) } },
                     { foreground.isFile },
-                    { withContext(Dispatchers.IO) { downloadSegmentation(foreground) } },
-                    { done->foregroundDone=done;foregroundPicker.launch(arrayOf("*/*")) },
+                    { report->withContext(Dispatchers.IO) { downloadSegmentation(foreground,report) } },
+                    { report,done->foregroundReport=report;foregroundDone=done;foregroundPicker.launch(arrayOf("*/*")) },
                     { SkinTokensEngine.available() }, { SkinTokensEngine.installed(model) },
-                    { withContext(Dispatchers.IO) { val c=kotlinx.coroutines.currentCoroutineContext();SkinTokensEngine.download(model){ c.ensureActive() } } },
+                    { report->withContext(Dispatchers.IO) { val c=kotlinx.coroutines.currentCoroutineContext();SkinTokensEngine.download(model,report){ c.ensureActive() } } },
+                    { report,done->learnedReport=report;learnedDone=done;learnedPicker.launch(arrayOf("*/*")) },
                     { done->imagesDone=done;imagesPicker.launch(arrayOf("image/*")) },
                     { bytes,done->pending=bytes;saveDone=done;saver.launch("model.glb") },
-                    { images,rig,resolution,automaticMask,progress->generateLocal(model,images,rig,resolution,automaticMask,progress) })
+                    { image->Bitmap.createBitmap(image.argb,IMAGE_SIZE,IMAGE_SIZE,Bitmap.Config.ARGB_8888).asImageBitmap() },
+                    { png ->
+                        val decoded=BitmapFactory.decodeByteArray(png,0,png.size) ?: error("Invalid texture PNG.")
+                        try { IntArray(decoded.width*decoded.height).also {
+                            decoded.getPixels(it,0,decoded.width,0,0,decoded.width,decoded.height)
+                        } } finally { decoded.recycle() }
+                    },false,
+                    { images,resolution,automaticMask,progress->generateLocal(model,images,resolution,automaticMask,progress) })
             }
         }
     }

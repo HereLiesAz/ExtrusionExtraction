@@ -7,9 +7,6 @@ import java.util.zip.DeflaterOutputStream
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
-/** Per-corner UVs and a self-contained sRGB PNG. The original mesh is unchanged. */
-class TextureAtlas(val uv:FloatArray,val png:ByteArray,val size:Int)
-
 /** Bake photographic samples or linear vertex colors into padded triangle charts.
  * Missing depth-consistent photographic samples use interpolated vertex colors.
  * Return null when the triangle budget cannot fit a 4096px atlas at 8px per chart.
