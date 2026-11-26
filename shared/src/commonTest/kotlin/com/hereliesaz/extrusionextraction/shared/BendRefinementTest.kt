@@ -27,7 +27,6 @@ class BendRefinementTest {
         // A 90-degree Z rotation mixes orthogonal unit vectors at weight 1/2:
         // the original x edge length becomes sqrt(1/2), independently known.
         val baseline=1.0-sqrt(.5)
-        val edge=vertices[1]
         val w=result.rig.weights[5].toDouble()
         val changed=1.0-sqrt((1-w)*(1-w)+w*w)
         assertTrue(changed<=baseline+1e-6)
@@ -47,6 +46,42 @@ class BendRefinementTest {
             }
             assertTrue(score(result.rig)<=score(original)+1e-6)
         }
+    }
+    @Test fun asymmetricBlendHasStrictAcceptedImprovement() {
+        val original=rig(listOf(.1f,.1f,.1f,.25f))
+        val result=refineBends(mesh,original,maxTriangles=4)
+        assertEquals(1,result.adjustedVertices)
+        assertEquals(.15f,result.rig.weights[13],.000001f)
+        assertSame(mesh,result.mesh)
+        assertContentEquals(original.indices,result.rig.indices)
+        assertEquals(.25f,original.weights[13])
+    }
+    @Test fun conformingSplitPreservesDisconnectedClosedSurfacesAndBudget() {
+        // Three separated tetrahedra provide a 12-face fixture and a one-split
+        // budget. Only the first shell has a weight transition.
+        val v=(0..2).flatMap{s->vertices.map{it+Vec3(s*3f,0f,0f)}}
+        val original=Mesh(v,List(v.size){Vec3(.2f,.4f,.6f)},
+            (0..2).flatMap{s->mesh.indices.map{it+s*4}}.toIntArray())
+        val fixedJoints=listOf(joints[0],Joint("bend",0,Vec3(0f,0f,.5f)))
+        val bound=Rig(fixedJoints,IntArray(v.size*4){if(it%4==1)1 else 0},
+            FloatArray(v.size*4){i->if(i==13 || (i%4==0 && i/4!=3))1f else 0f})
+        val result=refineBends(original,bound,maxTriangles=14)
+        assertEquals(1,result.splitEdges)
+        assertEquals(0,result.adjustedVertices)
+        assertEquals(13,result.mesh.vertices.size)
+        assertEquals(42,result.mesh.indices.size)
+        assertEquals(v,result.mesh.vertices.take(12))
+        assertEquals(fixedJoints,result.rig.joints)
+        assertEquals(Vec3(.2f,.4f,.6f),result.mesh.colors.last())
+        // The appended position must bisect one of the three original edges
+        // incident to vertex 3; no edge between shells is legal.
+        assertTrue((0..2).any{result.mesh.vertices.last()==(v[it]+v[3])*.5f})
+        assertEquals(.5f,result.rig.weights[48],.000001f)
+        assertEquals(.5f,result.rig.weights[49],.000001f)
+        assertContentEquals(result.mesh.indices,repairMesh(result.mesh).indices)
+        assertNull(firstNonAdjacentIntersection(result.mesh))
+        val capped=refineBends(original,bound,maxTriangles=12)
+        assertSame(original,capped.mesh)
     }
     @Test fun cancellationIsNotSwallowed() {
         assertFailsWith<IllegalStateException>{refineBends(mesh,rig(List(4){.5f})){error("cancel")}}
