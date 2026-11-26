@@ -68,6 +68,14 @@ SH
 chmod +x "$worker/run"
 EE_COLAB_ONNX=cpu EE_COLAB_SKINTOKENS=cpu "$worker/run" --check
 tar -C "$stage" -czf "$stage/worker.tar.gz" worker
+# Keep publication within the notebook's explicit compressed/expanded budgets.
+python3 - "$stage/worker.tar.gz" <<'PY'
+import pathlib, sys, tarfile
+archive = pathlib.Path(sys.argv[1])
+assert 0 < archive.stat().st_size <= 1024**3, "Worker archive exceeds notebook download budget."
+with tarfile.open(archive, "r:gz") as package:
+    assert sum(member.size for member in package.getmembers()) <= 2 * 1024**3, "Worker exceeds notebook extraction budget."
+PY
 # Smoke test the exact archived payload, not just the build tree.
 mkdir "$stage/extracted"
 tar -C "$stage/extracted" -xzf "$stage/worker.tar.gz"
