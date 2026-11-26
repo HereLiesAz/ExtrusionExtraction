@@ -13,6 +13,11 @@ class SkinTokensBundleTest {
         verifySkinTokensStream("abc".byteInputStream(),component,output)
         assertContentEquals(byteArrayOf(97,98,99),output.toByteArray())
     }
+    @Test fun reportsActualCopiedBytes() {
+        val seen=mutableListOf<Long>()
+        verifySkinTokensStream("abc".byteInputStream(),component,transfer={seen.add(it)})
+        assertEquals(listOf(3L),seen)
+    }
     @Test fun rejectsWrongSizeOrDigest() {
         for(text in listOf("ab","abcd","abd")) assertFailsWith<IllegalArgumentException>{
             verifySkinTokensStream(text.byteInputStream(),component)

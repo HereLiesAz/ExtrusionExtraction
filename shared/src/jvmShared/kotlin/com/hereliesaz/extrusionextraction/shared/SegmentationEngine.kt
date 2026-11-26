@@ -42,10 +42,12 @@ suspend fun segmentForeground(model:File,images:List<ViewImage>,progress:(String
         options.setIntraOpNumThreads(minOf(4,Runtime.getRuntime().availableProcessors()))
         env.createSession(model.absolutePath,options).use { session ->
             val name=session.inputNames.single()
-            images.mapIndexed { index,image ->
+            var completed=0
+            val required=images.count { !hasForegroundMask(it) }
+            images.map { image ->
                 context.ensureActive()
                 if(hasForegroundMask(image)) image else {
-                    progress("Isolating foreground: ${index+1}/${images.size}")
+                    progress("Isolating foreground: ${completed+1}/$required")
                     val input=segmentationInput(image)
                     OnnxTensor.createTensor(env,FloatBuffer.wrap(input),
                         longArrayOf(1,3,SEGMENT_SIZE.toLong(),SEGMENT_SIZE.toLong())).use { tensor ->
@@ -55,7 +57,10 @@ suspend fun segmentForeground(model:File,images:List<ViewImage>,progress:(String
                             val buffer=output.floatBuffer
                             require(buffer.remaining()==SEGMENT_SIZE*SEGMENT_SIZE) { "Unexpected saliency shape." }
                             val saliency=FloatArray(buffer.remaining()).also { buffer.get(it) }
-                            applyForeground(image,saliency)
+                            applyForeground(image,saliency).also {
+                                completed++
+                                progress("Foreground: $completed/$required images complete")
+                            }
                         }
                     }
                 }

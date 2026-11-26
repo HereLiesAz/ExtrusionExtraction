@@ -31,6 +31,15 @@ data class TransferProgress(val label:String, val completed:Long, val total:Long
     val fraction:Float? get() = total?.takeIf { it>0 }?.let { (completed.toDouble()/it).coerceIn(0.0,1.0).toFloat() }
 }
 
+/** Move a reference by identity, retaining the list object when no move is possible. */
+internal fun moveReference(images:List<ViewImage>,image:ViewImage,delta:Int):List<ViewImage> {
+    val from=images.indexOf(image)
+    if(from<0) return images
+    val to=(from.toLong()+delta).coerceIn(0L,images.lastIndex.toLong()).toInt()
+    if(from==to) return images
+    return images.toMutableList().apply { add(to,removeAt(from)) }
+}
+
 /** Shared workspace; platform adapters provide document IO and bitmap conversion. */
 @Composable
 fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Result<Unit>)->Unit)->Unit,
@@ -87,18 +96,14 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
     LaunchedEffect(playing,images) {
         while(playing && images.size>1) {
             showMesh=false
-            val index=images.indexOf(selected)
+            val index=selected?.let { images.indexOf(it) } ?: -1
             selected=images[(index+1)%images.size]
             delay(200)
         }
     }
     val moveImage:(ViewImage,Int)->Unit={ image,delta ->
-        val from=images.indexOf(image)
-        val to=(from+delta).coerceIn(0,images.lastIndex.coerceAtLeast(0))
-        if(from>=0 && from!=to) {
-            images=images.toMutableList().apply { add(to,removeAt(from)) }
-            invalidate()
-        }
+        val reordered=moveReference(images,image,delta)
+        if(reordered!==images) { images=reordered; invalidate() }
     }
     MaterialTheme(colorScheme=darkColorScheme(primary=Color(0xFF89DFCF))) {
         Surface(Modifier.fillMaxSize()) {

@@ -144,6 +144,7 @@ suspend fun generateLocal(model:File, images:List<ViewImage>, rig:RigMode, resol
                     }
                 }
                 views=if(views.isEmpty()) local else appendWindow(views,window.first,local)
+                progress("Depth and cameras: ${windowIndex+1}/${windows.size} windows complete")
             }
         }
     }
