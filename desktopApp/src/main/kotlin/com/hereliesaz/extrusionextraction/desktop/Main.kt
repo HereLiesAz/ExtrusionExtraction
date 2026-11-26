@@ -17,7 +17,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Desktop document adapter. The same shared native inference and geometry code runs here. */
-fun main()=application {
+fun main(args:Array<String>) {
+    if(args.firstOrNull()==DESKTOP_WORKER_FLAG) {
+        runDesktopWorker(args.drop(1))
+        return
+    }
+    application {
     val model=File(System.getProperty("user.home"),".extrusion-extraction/models/da3.onnx")
     val foreground=segmentationFile(model)
     Window(onCloseRequest=::exitApplication,title="Extrusion Extraction") {
@@ -34,20 +39,20 @@ fun main()=application {
                 val file=choose("Select DA3 ONNX graph",FileDialog.LOAD).firstOrNull()
                 scope.launch { done(withContext(Dispatchers.IO) { runCatching {
                     require(file!=null) { "Import cancelled." }
-                    installModel(file.inputStream(),model) { report(TransferProgress("Importing DA3",it,file.length())) }
+                    acquireGraphInWorker(model,"import-da3",file,report)
                 } }) }
             },
-            { report -> withContext(Dispatchers.IO) { downloadModel(model,transfer=report) } },
+            { report -> withContext(Dispatchers.IO) { acquireGraphInWorker(model,"download-da3",null,report) } },
             { foreground.isFile },
-            { report -> withContext(Dispatchers.IO) { downloadSegmentation(foreground,report) } },
+            { report -> withContext(Dispatchers.IO) { acquireGraphInWorker(foreground,"download-foreground",null,report) } },
             { report,done->
                 val file=choose("Select U²-Net foreground graph",FileDialog.LOAD).firstOrNull()
                 scope.launch { done(withContext(Dispatchers.IO) { runCatching {
                     require(file!=null) { "Import cancelled." }
-                    installSegmentation(file.inputStream(),foreground) { report(TransferProgress("Importing U²-Net",it,file.length())) }
+                    acquireGraphInWorker(foreground,"import-foreground",file,report)
                 } }) }
             },
-            { SkinTokensEngine.available() }, { SkinTokensEngine.installed(model) },
+            { SkinTokensEngine.available() }, { SkinTokensEngine.unavailableReason() }, { SkinTokensEngine.installed(model) },
             { report -> withContext(Dispatchers.IO) { val c=kotlinx.coroutines.currentCoroutineContext();SkinTokensEngine.download(model,report){ c.ensureActive() } } },
             { report,done ->
                 val files=choose("Select all three SkinTokens GGUF files",FileDialog.LOAD,true)
@@ -59,7 +64,24 @@ fun main()=application {
                 val files=choose("Select overlapping views",FileDialog.LOAD,true)
                 scope.launch { done(withContext(Dispatchers.IO) { runCatching {
                     require(files.size<=MAX_REFERENCES) { "Select at most $MAX_REFERENCES views." }
-                    files.map(::decodeReference)
+                    files.map { file->
+                        val image=ImageIO.createImageInputStream(file).use { input->
+                            val readers=ImageIO.getImageReaders(input)
+                            require(readers.hasNext()) { "Unsupported image: ${file.name}" }
+                            val reader=readers.next()
+                            try {
+                                reader.input=input
+                                val width=reader.getWidth(0);val height=reader.getHeight(0)
+                                require(width.toLong()*height<=40_000_000) { "Image exceeds pixel limit." }
+                                val step=maxOf(1,maxOf(width,height)/(IMAGE_SIZE*2))
+                                val params=reader.defaultReadParam
+                                params.setSourceSubsampling(step,step,0,0)
+                                reader.read(0,params)
+                            } finally { reader.dispose() }
+                        }
+                        fitReferenceImage(file.name,image.width,image.height,
+                            image.getRGB(0,0,image.width,image.height,null,0,image.width))
+                    }
                 } }) }
             },
             { bytes,done->
@@ -87,6 +109,7 @@ fun main()=application {
                 val decoded=ImageIO.read(png.inputStream()) ?: error("Invalid texture PNG.")
                 decoded.getRGB(0,0,decoded.width,decoded.height,null,0,decoded.width)
             },true,
-            { images,resolution,automaticMask,progress->generateLocal(model,images,resolution,automaticMask,progress) })
+            { images,resolution,automaticMask,progress->reconstructInWorker(model,images,resolution,automaticMask,progress) })
     }
+}
 }

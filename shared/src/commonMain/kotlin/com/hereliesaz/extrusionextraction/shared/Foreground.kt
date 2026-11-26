@@ -7,7 +7,7 @@ import kotlin.math.roundToInt
 const val SEGMENT_SIZE = 320
 
 /** Existing alpha is authoritative; do not replace hand-prepared silhouettes. */
-fun hasForegroundMask(image:ViewImage):Boolean = image.argb.any { it.ushr(24)<128 }
+fun hasForegroundMask(image:ViewImage):Boolean = image.sourceMask
 
 /** Pixel-center bilinear resampling, shared by both platform runtimes. */
 private fun sample(width:Int,height:Int,x:Float,y:Float,value:(Int)->Float):Float {
@@ -32,7 +32,7 @@ fun segmentationInput(image:ViewImage):FloatArray {
         val sx=(x+.5f)*IMAGE_SIZE/size-.5f
         val sy=(y+.5f)*IMAGE_SIZE/size-.5f
         input[c*pixels+y*size+x]=sample(IMAGE_SIZE,IMAGE_SIZE,sx,sy) { i ->
-            ((image.argb[i] ushr (16-c*8)) and 255).toFloat()
+            if(!image.observed(i)) 255f else ((image.argb[i] ushr (16-c*8)) and 255).toFloat()
         }
     }
     val maximum=(input.maxOrNull() ?: 0f).coerceAtLeast(1e-6f)
@@ -59,11 +59,11 @@ fun applyForeground(image:ViewImage, saliency:FloatArray):ViewImage {
         val x=i%IMAGE_SIZE;val y=i/IMAGE_SIZE
         val sx=(x+.5f)*SEGMENT_SIZE/IMAGE_SIZE-.5f
         val sy=(y+.5f)*SEGMENT_SIZE/IMAGE_SIZE-.5f
-        val a=(((sample(SEGMENT_SIZE,SEGMENT_SIZE,sx,sy){saliency[it]}-low)/(high-low))
-            .coerceIn(0f,1f)*255f).roundToInt()
+        val predicted=((sample(SEGMENT_SIZE,SEGMENT_SIZE,sx,sy){saliency[it]}-low)/(high-low)).coerceIn(0f,1f)
+        val a=if(image.observed(i)) (predicted*image.argb[i].ushr(24)).roundToInt() else 0
         if(a>=128) foreground++
         (image.argb[i] and 0x00ffffff) or (a shl 24)
     }
     require(foreground>=image.argb.size/100) { "Foreground too small in ${image.name}." }
-    return ViewImage(image.name,pixels)
+    return ViewImage(image.name,pixels,image.sourceBounds,true,image.croppedForeground)
 }

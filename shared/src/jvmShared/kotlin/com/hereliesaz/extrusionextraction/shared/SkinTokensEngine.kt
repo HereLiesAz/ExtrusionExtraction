@@ -9,7 +9,7 @@ import java.nio.file.StandardCopyOption
  * Model identities are fixed in the shared SkinTokensBundle contract.
  */
 object SkinTokensEngine {
-    private val nativeAvailable by lazy {
+    private val nativeFailure:String? by lazy {
         try {
             val resources=System.getProperty("compose.application.resources.dir")
             if(resources!=null) {
@@ -17,12 +17,14 @@ object SkinTokensEngine {
                 System.load(File(resources,System.mapLibraryName("skintokens")).absolutePath)
                 System.load(File(resources,System.mapLibraryName("ee_skintokens")).absolutePath)
             } else System.loadLibrary("ee_skintokens")
-            nativeAbi()==1
-        } catch(_:LinkageError) { false }
-        catch(_:SecurityException) { false }
+            if(nativeAbi()==1) null else "Incompatible SkinTokens native ABI."
+        } catch(e:LinkageError) { e.message ?: "Native library linkage failed." }
+        catch(e:SecurityException) { e.message ?: "Native library access denied." }
     }
     /** Only offer acquisition when a compatible packaged native runtime exists. */
-    fun available():Boolean = nativeAvailable
+    fun available():Boolean = nativeFailure==null
+    /** Actual load failure, including missing native dependencies and ABI mismatches. */
+    fun unavailableReason():String? = nativeFailure
     private fun directory(depthModel:File)=File(depthModel.parentFile,"skintokens-f16")
     fun installed(depthModel:File):Boolean = available() && skinTokensBundlePresent(directory(depthModel))
     /** Explicit one-time HTTPS acquisition, with a complete atomic bundle install.
@@ -45,7 +47,7 @@ object SkinTokensEngine {
     /** Verify all components in staging before replacing the installed bundle. */
     private fun acquire(depthModel:File,transfer:(TransferProgress)->Unit,checkpoint:()->Unit,
                         read:(SkinTokensComponent,(java.io.InputStream)->Unit)->Unit) {
-        check(available()){"SkinTokens native runtime unavailable."}
+        check(available()){unavailableReason() ?: "SkinTokens native runtime unavailable."}
         val destination=directory(depthModel)
         check(destination.parentFile.isDirectory || destination.parentFile.mkdirs())
         val staging=Files.createTempDirectory(destination.parentFile.toPath(),"skintokens-").toFile()

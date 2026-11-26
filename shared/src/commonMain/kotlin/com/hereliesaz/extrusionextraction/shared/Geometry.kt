@@ -13,9 +13,16 @@ data class Vec3(val x: Float, val y: Float, val z: Float) {
     fun finite() = x.isFinite() && y.isFinite() && z.isFinite()
 }
 
-/** Input image resampled onto the inference grid; ARGB alpha excludes transparent background. */
-class ViewImage(val name: String, val argb: IntArray) {
+/** Input on the inference grid. Padding is unobserved, not evidence of empty space.
+ * [sourceMask] distinguishes a supplied or inferred silhouette from transparent padding.
+ */
+class ViewImage(val name: String, val argb: IntArray,
+                val sourceBounds:ReferenceBounds=ReferenceBounds(0,0,IMAGE_SIZE,IMAGE_SIZE),
+                val sourceMask:Boolean=argb.any { it.ushr(24)<128 },
+                val croppedForeground:Boolean=false) {
     init { require(argb.size == IMAGE_SIZE * IMAGE_SIZE) }
+    /** Whether this grid pixel corresponds to the original reference image. */
+    fun observed(index:Int):Boolean = sourceBounds.contains(index%IMAGE_SIZE,index/IMAGE_SIZE)
 }
 const val IMAGE_SIZE = 504
 const val VIEW_COUNT = 4
@@ -95,7 +102,7 @@ fun fuse(views: List<CameraView>, resolution: Int = 72, checkpoint: () -> Unit =
             var sum=0f; var weight=0f; var carved=false
             for(v in views) {
                 val camera=v.camera(world); val px=v.pixel(camera)
-                if(px<0) continue
+                if(px<0 || !v.image.observed(px)) continue
                 if(!v.foreground(px)) { carved=true; break }
                 if(!v.reliable(px)) continue
                 val sdf=v.depth[px]-camera.z
