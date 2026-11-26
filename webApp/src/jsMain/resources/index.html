@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Extrusion Extraction</title>
+<link rel="stylesheet" href="workspace.css">
+</head>
+<body>
+<main>
+<header><h1>Extrusion Extraction</h1><p>Web workspace · Colab reconstruction</p><p id="status" role="status" aria-live="polite">Starting workspace…</p></header>
+<section class="controls" aria-label="Reconstruction controls">
+<h2>References</h2><p>Choose overlapping images, upright front view first. Reorder before exporting.</p>
+<label for="references">Add images</label><input id="references" type="file" accept="image/*" multiple>
+<ol id="referenceList"></ol>
+<label for="cells">Mesh detail: <output id="detail">72</output></label><input id="cells" type="range" min="32" max="96" value="72">
+<label><input id="mask" type="checkbox" checked> Automatic foreground isolation</label>
+<label><input id="template" type="checkbox"> Humanoid T-pose</label>
+<label><input id="learned" type="checkbox"> SkinTokens</label>
+<h2>Colab</h2>
+<p>Run the actual notebook in your own Google account. Download a job, upload it to Colab, run the cells, and import the result.</p>
+<button id="exportJob" disabled>Export Colab job</button>
+<a id="notebook" target="_blank" rel="noopener noreferrer">Open Colab notebook</a>
+<label for="result">Import .eeresult</label><input id="result" type="file" accept=".eeresult">
+<p>Browser-local model inference and direct API transfers are not available in this build.</p>
+</section>
+<section class="preview" aria-label="Model preview">
+<h2>Preview</h2>
+<canvas id="preview" width="504" height="504" aria-label="Reconstructed model preview"></canvas>
+<label for="variant">Rig variant</label><select id="variant" disabled></select>
+<div class="row"><label><input id="texture" type="checkbox" checked> Texture</label><label><input id="wire" type="checkbox"> Wireframe</label><label><input id="skeleton" type="checkbox" checked> Skeleton</label></div>
+<label for="yaw">Rotation</label><input id="yaw" type="range" min="-3.14" max="3.14" step="0.02" value="0.35">
+<label for="pitch">Tilt</label><input id="pitch" type="range" min="-1.55" max="1.55" step="0.02" value="0.15">
+<button id="exportGlb" disabled>Export GLB</button>
+</section>
+</main>
+<noscript>JavaScript is required for this workspace.</noscript>
+<script src="webApp.js"></script>
+</body></html>
