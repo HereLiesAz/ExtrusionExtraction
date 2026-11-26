@@ -66,7 +66,8 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
     var colabRuntime by remember { mutableStateOf<ColabRuntime?>(null) }
     var colabCode by remember { mutableStateOf("") }
     var pairedCode by remember { mutableStateOf<String?>(null) }
-    var colabSent by remember { mutableStateOf(false) }
+    var colabSnapshot by remember { mutableStateOf<ColabSnapshot?>(null) }
+    var colabStatusError by remember { mutableStateOf<String?>(null) }
     var images by remember { mutableStateOf(emptyList<ViewImage>()) }
     var selected by remember { mutableStateOf<ViewImage?>(null) }
     var edgeFragments by remember { mutableStateOf(emptyMap<ViewImage,EdgeFragments>()) }
@@ -157,11 +158,20 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
         generationFailed=false
     }
     fun transferColab(label:String,action:suspend ()->String) {
-        begin(label)
+        begin(label);colabStatusError=null
         scope.launch {
             try { status=action() }
             catch(e:CancellationException) { throw e }
-            catch(e:Exception) { status="Colab transfer failed: "+(e.message ?: "Request failed.") }
+            catch(e:ColabSessionUnavailable) {
+                colabSnapshot=null
+                colabStatusError=e.message ?: "Notebook unavailable."
+                status=colabStatusError!!
+            }
+            catch(e:Exception) {
+                colabSnapshot=null
+                colabStatusError="Colab transfer failed: "+(e.message ?: "Request failed.")
+                status=colabStatusError!!
+            }
             catch(e:OutOfMemoryError) { status="Not enough memory for Colab transfer." }
             finally { busy=false;transfer=null }
         }
@@ -317,11 +327,22 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                                     try {
                                         authorizeColab { result->
                                             result.onSuccess { client->
-                                                colabTransfer=client;colabRuntime=null;pairedCode=null;colabSent=false
-                                                colabRuntimes=emptyList()
+                                                val previous=colabRuntime?.name
+                                                val previousCode=pairedCode
+                                                colabTransfer=client;colabSnapshot=null;pairedCode=null
+                                                colabRuntimes=emptyList();colabRuntime=null
                                                 transferColab("Listing Colab runtimes") {
                                                     colabRuntimes=client.runtimes()
-                                                    if(colabRuntimes.isEmpty()) "No active Colab runtimes. Connect in the notebook first."
+                                                    val matching=colabRuntimes.firstOrNull { it.name==previous }
+                                                    colabRuntime=matching
+                                                    if(matching!=null && previousCode!=null && previousCode==colabCode) {
+                                                        client.pair(matching,previousCode)
+                                                        pairedCode=previousCode
+                                                        colabSnapshot=client.snapshot(matching,previousCode)
+                                                        "Reconnected to the same notebook."
+                                                    } else if(previous!=null && matching==null) {
+                                                        throw ColabSessionUnavailable("Previous runtime is not available to this account. Check the notebook or choose another runtime.")
+                                                    } else if(colabRuntimes.isEmpty()) "No active Colab runtimes. Connect in the notebook first."
                                                     else "Choose the runtime matching the notebook."
                                                 }
                                             }.onFailure {
@@ -333,38 +354,68 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                                 if(colabTransfer!=null) {
                                     TextButton(enabled=!busy,onClick={
                                         colabTransfer=null;colabRuntime=null;colabRuntimes=emptyList()
-                                        colabCode="";pairedCode=null;colabSent=false
+                                        colabCode="";pairedCode=null;colabSnapshot=null;colabStatusError=null
                                         status="Disconnected from Colab API."
                                     }) { Text("Disconnect API") }
                                     for(runtime in colabRuntimes) {
                                         FilterChip(selected=colabRuntime==runtime,enabled=!busy,onClick={
-                                            colabRuntime=runtime;pairedCode=null;colabSent=false
+                                            colabRuntime=runtime;pairedCode=null;colabSnapshot=null;colabStatusError=null
                                         },label={Text(runtime.name+" · "+runtime.description,maxLines=2)})
                                     }
                                     OutlinedTextField(value=colabCode,onValueChange={
-                                        colabCode=it.trim().take(32);pairedCode=null;colabSent=false
+                                        colabCode=it.trim().take(32);pairedCode=null;colabSnapshot=null;colabStatusError=null
                                     },enabled=!busy,singleLine=true,label={Text("Notebook pairing code")})
                                     OutlinedButton(enabled=!busy && colabRuntime!=null && colabCode.length==32,onClick={
                                         val client=colabTransfer ?: return@OutlinedButton
                                         val runtime=colabRuntime ?: return@OutlinedButton
                                         val code=colabCode
                                         transferColab("Verifying notebook pairing") {
-                                            client.pair(runtime,code);pairedCode=code;colabSent=false
-                                            "Notebook paired. Send references or retrieve its completed result."
+                                            client.pair(runtime,code);pairedCode=code
+                                            colabSnapshot=client.snapshot(runtime,code)
+                                            "Notebook paired. "+colabSnapshot!!.state.label
                                         }
                                     }) { Text("Pair notebook") }
                                     val paired=pairedCode==colabCode && pairedCode!=null && colabRuntime!=null
-                                    Button(enabled=!busy && paired && !colabSent && images.size>=VIEW_COUNT,onClick={
+                                    colabStatusError?.let { Text(it,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall) }
+                                    colabSnapshot?.let { observed->
+                                        Text("Last observed: "+observed.state.label,style=MaterialTheme.typography.titleSmall)
+                                        Text(observed.detail,style=MaterialTheme.typography.bodySmall)
+                                        Text("Notebook report: "+observed.reportedAt,style=MaterialTheme.typography.labelSmall)
+                                        if(observed.cancelRequested && observed.state!=ColabJobState.CANCELLED)
+                                            Text("Cancellation requested; not yet confirmed.",style=MaterialTheme.typography.bodySmall)
+                                        if(observed.resultAvailable) Text("A completed result is available.",style=MaterialTheme.typography.bodySmall)
+                                    }
+                                    OutlinedButton(enabled=!busy && paired,onClick={
+                                        val client=colabTransfer ?: return@OutlinedButton
+                                        val runtime=colabRuntime ?: return@OutlinedButton
+                                        val code=pairedCode ?: return@OutlinedButton
+                                        transferColab("Checking notebook status") {
+                                            colabSnapshot=client.snapshot(runtime,code)
+                                            "Notebook status refreshed."
+                                        }
+                                    }) { Text("Refresh notebook status") }
+                                    Button(enabled=!busy && paired && colabSnapshot?.canSubmit==true && images.size>=VIEW_COUNT,onClick={
                                         val client=colabTransfer ?: return@Button
                                         val runtime=colabRuntime ?: return@Button
                                         val code=pairedCode ?: return@Button
                                         val job=ColabJob(images.toList(),resolution.toInt(),automaticMask,colabTemplate,colabLearned)
                                         transferColab("Sending reference job to Colab") {
-                                            client.upload(runtime,code,job);colabSent=true
+                                            client.upload(runtime,code,job)
+                                            colabSnapshot=client.snapshot(runtime,code)
                                             "Job uploaded. Run the reconstruction cell in the paired notebook."
                                         }
                                     }) { Text("Send job to notebook") }
-                                    OutlinedButton(enabled=!busy && paired,onClick={
+                                    OutlinedButton(enabled=!busy && paired && colabSnapshot?.canCancel==true,onClick={
+                                        val client=colabTransfer ?: return@OutlinedButton
+                                        val runtime=colabRuntime ?: return@OutlinedButton
+                                        val code=pairedCode ?: return@OutlinedButton
+                                        transferColab("Requesting job cancellation") {
+                                            client.cancel(runtime,code)
+                                            colabSnapshot=client.snapshot(runtime,code)
+                                            "Cancellation requested. Refresh status for confirmation."
+                                        }
+                                    }) { Text("Cancel reconstruction job") }
+                                    OutlinedButton(enabled=!busy && paired && colabSnapshot?.resultAvailable==true,onClick={
                                         val client=colabTransfer ?: return@OutlinedButton
                                         val runtime=colabRuntime ?: return@OutlinedButton
                                         val code=pairedCode ?: return@OutlinedButton
