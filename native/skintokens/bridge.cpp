@@ -23,9 +23,9 @@ struct UtfChars {
 extern "C" JNIEXPORT jint JNICALL
 Java_com_hereliesaz_extrusionextraction_shared_SkinTokensEngine_nativeAbi(JNIEnv*,jobject) {return 1;}
 
-extern "C" JNIEXPORT jfloatArray JNICALL
-Java_com_hereliesaz_extrusionextraction_shared_SkinTokensEngine_predict(
-    JNIEnv* env,jobject,jstring bundle,jfloatArray positions,jintArray triangles) {
+namespace {
+jfloatArray predictRig(JNIEnv* env,jstring bundle,jfloatArray positions,jintArray triangles,
+                       skintokens::device_kind device) {
     try {
         if(!bundle||!positions||!triangles) throw std::invalid_argument("Missing learned rig input.");
         const auto np=env->GetArrayLength(positions),nt=env->GetArrayLength(triangles);
@@ -57,7 +57,7 @@ Java_com_hereliesaz_extrusionextraction_shared_SkinTokensEngine_predict(
             mesh.faces.push_back(face);
         }
         skintokens::runtime_options runtime;
-        runtime.device=skintokens::device_kind::cpu;
+        runtime.device=device;
         runtime.threads=4;
         auto model=skintokens::model::load(path.chars,runtime);
         if(!model) throw std::runtime_error(model.error().message);
@@ -88,4 +88,31 @@ Java_com_hereliesaz_extrusionextraction_shared_SkinTokensEngine_predict(
     } catch(const std::exception& e) {fail(env,e.what());}
       catch(...) {fail(env,"Unknown SkinTokens native failure.");}
     return nullptr;
+}
+
+// Keep the existing CPU entry point and packet ABI. The optional Vulkan entry point
+// selects the pinned upstream's strict Vulkan device kind, not automatic fallback.
+}
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_hereliesaz_extrusionextraction_shared_SkinTokensEngine_predict(
+    JNIEnv* env,jobject,jstring bundle,jfloatArray positions,jintArray triangles) {
+    return predictRig(env,bundle,positions,triangles,skintokens::device_kind::cpu);
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_hereliesaz_extrusionextraction_shared_SkinTokensEngine_nativeVulkanBuilt(JNIEnv*,jobject) {
+#ifdef EE_SKINTOKENS_VULKAN
+    return JNI_TRUE;
+#else
+    return JNI_FALSE;
+#endif
+}
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_hereliesaz_extrusionextraction_shared_SkinTokensEngine_predictVulkan(
+    JNIEnv* env,jobject,jstring bundle,jfloatArray positions,jintArray triangles) {
+#ifdef EE_SKINTOKENS_VULKAN
+    return predictRig(env,bundle,positions,triangles,skintokens::device_kind::vulkan);
+#else
+    fail(env,"This SkinTokens package has no Vulkan backend.");
+    return nullptr;
+#endif
 }

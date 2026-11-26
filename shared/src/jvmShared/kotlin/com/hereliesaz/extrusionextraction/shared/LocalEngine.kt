@@ -114,19 +114,26 @@ internal fun downloadVerifiedGraph(source:String,onLength:(Long?)->Unit={},insta
 /** Both platforms run identical local inference windows, alignment, fusion and skin export. */
 suspend fun generateLocal(model:File, images:List<ViewImage>, resolution:Int,
                           automaticMask:Boolean,
+                          progress:(String)->Unit):ReconstructionSession =
+    generateLocal(model,images,resolution,automaticMask,ReconstructionAcceleration(),progress)
+
+/** Headless execution may select accelerators without changing the Android/desktop local contract. */
+suspend fun generateLocal(model:File,images:List<ViewImage>,resolution:Int,automaticMask:Boolean,
+                          acceleration:ReconstructionAcceleration,
                           progress:(String)->Unit):ReconstructionSession = withContext(Dispatchers.Default) {
     require(model.isFile) { "Import the DA3 four-view model first." }
     val windows=viewWindows(images.size)
     val context=currentCoroutineContext()
     // Keep original RGB for DA3 pose estimation; use the learned alpha only for geometry.
-    val masked=if(automaticMask) segmentForeground(segmentationFile(model),images,progress) else images
+    progress("ONNX execution provider: "+acceleration.onnx.name)
+    val masked=if(automaticMask) segmentForeground(segmentationFile(model),images,acceleration.onnx,progress) else images
     val pixels=IMAGE_SIZE*IMAGE_SIZE
     val input=FloatArray(VIEW_COUNT*3*pixels)
     val mean=floatArrayOf(.485f,.456f,.406f); val std=floatArrayOf(.229f,.224f,.225f)
     val env=OrtEnvironment.getEnvironment()
     var views=emptyList<CameraView>()
     OrtSession.SessionOptions().use { options ->
-        options.setIntraOpNumThreads(minOf(4,Runtime.getRuntime().availableProcessors()))
+        options.configureReconstruction(acceleration.onnx)
         env.createSession(model.absolutePath,options).use { session ->
             for((windowIndex,window) in windows.withIndex()) {
                 context.ensureActive()
@@ -192,8 +199,8 @@ suspend fun generateLocal(model:File, images:List<ViewImage>, resolution:Int,
         } else checked
     }
     val bound=if(rig==RigMode.LEARNED) {
-        progress("Predicting learned skeleton and skin weights")
-        SkinTokensEngine.rig(model,optimized) { context.ensureActive() }
+        progress("Predicting learned skeleton and skin weights ("+acceleration.learnedRig.name+")")
+        SkinTokensEngine.rig(model,optimized,acceleration.learnedRig) { context.ensureActive() }
     } else joints?.let {
         progress("Binding surface-aware skin weights")
         humanoidRig(optimized,it) { context.ensureActive() }
@@ -229,5 +236,5 @@ suspend fun generateLocal(model:File, images:List<ViewImage>, resolution:Int,
     ReconstructionSession(buildVariant(RigMode.NONE,progress),buildVariant)
 }
 
-/** Force ONNX native runtime initialization without acquiring model weights. Used by packaged worker smoke checks. */
-fun checkReconstructionRuntime() { OrtEnvironment.getEnvironment() }
+/** Execute a real small ONNX graph without acquiring model weights. */
+fun checkReconstructionRuntime(device:OnnxDevice=OnnxDevice.CPU) { checkOnnxExecution(device) }

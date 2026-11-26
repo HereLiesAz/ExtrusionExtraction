@@ -56,7 +56,10 @@ def main():
     parser.add_argument("--work-dir", type=Path, default=Path("build/skintokens"))
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--portable-linux", action="store_true", help="Disable host-specific CPU instruction selection for the Colab worker.")
+    parser.add_argument("--vulkan", action="store_true", help="Build the optional Linux GGML Vulkan backend (requires Vulkan SDK tools).")
     args = parser.parse_args()
+    if args.vulkan and args.prepare_only:
+        parser.error("--vulkan is a host build option, not Android preparation")
     root = args.work_dir.resolve()
     root.mkdir(parents=True, exist_ok=True)
     runtime, json = root / "runtime", root / "json"
@@ -77,7 +80,8 @@ def main():
     build, stage = root / "host-build", root / "host-install"
     portable = ["-DGGML_NATIVE=OFF", "-DGGML_AVX=OFF", "-DGGML_AVX2=OFF", "-DGGML_FMA=OFF", "-DGGML_F16C=OFF", "-DGGML_BMI2=OFF", "-DGGML_AVX512=OFF"] if args.portable_linux else []
     run("cmake", "-S", str(source), "-B", str(build), "-DCMAKE_BUILD_TYPE=Release",
-        f"-DSKINTOKENS_SOURCE_DIR={runtime}", f"-Dnlohmann_json_DIR={config}", *portable)
+        f"-DSKINTOKENS_SOURCE_DIR={runtime}", f"-Dnlohmann_json_DIR={config}",
+        f"-DEE_SKINTOKENS_VULKAN={'ON' if args.vulkan else 'OFF'}", *portable)
     run("cmake", "--build", str(build), "--config", "Release", "--target", "ee_skintokens", "--parallel", "2")
     run("cmake", "--install", str(build), "--config", "Release", "--prefix", str(stage), "--component", "ee_runtime")
     print(f'Desktop Gradle argument: "-PskinTokensNativeDir={stage}"', flush=True)

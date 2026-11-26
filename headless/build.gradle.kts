@@ -16,7 +16,14 @@ kotlin {
         }
     }
 }
+// Resolve the pinned CUDA artifact separately; never put both ONNX JNI jars on one classpath.
+val colabCudaRuntime by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    isTransitive = false
+}
 dependencies {
+    colabCudaRuntime("com.microsoft.onnxruntime:onnxruntime_gpu:1.22.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     implementation("com.microsoft.onnxruntime:onnxruntime:1.22.0")
     testImplementation(kotlin("test"))
@@ -29,4 +36,10 @@ tasks.named<JavaExec>("run") {
     providers.gradleProperty("skinTokensNativeDir").orNull?.let {
         systemProperty("compose.application.resources.dir", file(it).resolve("common").absolutePath)
     }
+}
+
+/** Optional precompiled CUDA overlay; ordinary headless/local builds still use CPU ORT. */
+tasks.register<Copy>("stageColabCuda") {
+    from(colabCudaRuntime)
+    into(layout.buildDirectory.dir("colab-cuda"))
 }
