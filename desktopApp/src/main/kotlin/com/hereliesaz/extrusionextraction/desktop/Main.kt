@@ -1,6 +1,7 @@
 package com.hereliesaz.extrusionextraction.desktop
 
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import com.hereliesaz.extrusionextraction.shared.*
@@ -27,6 +28,7 @@ fun main(args:Array<String>) {
     val foreground=segmentationFile(model)
     Window(onCloseRequest=::exitApplication,title="Extrusion Extraction") {
         val scope=rememberCoroutineScope()
+        val uriHandler=LocalUriHandler.current
         fun choose(title:String,mode:Int,multiple:Boolean=false,defaultName:String="model.glb"):Array<File> {
             val dialog=FileDialog(null as Frame?,title,mode)
             dialog.isMultipleMode=multiple
@@ -111,6 +113,10 @@ fun main(args:Array<String>) {
                         }
                     })
                 }
+            },
+            { request->
+                launchColabBrowser(request,openPanel={false},
+                    openBrowser={uriHandler.openUri(COLAB_NOTEBOOK_URL)})
             },
             { image ->
                 val buffer=BufferedImage(IMAGE_SIZE,IMAGE_SIZE,BufferedImage.TYPE_INT_ARGB)

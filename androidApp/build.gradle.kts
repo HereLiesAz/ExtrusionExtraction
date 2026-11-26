@@ -32,5 +32,6 @@ kotlin { jvmToolchain(17) }
 dependencies {
     implementation(project(":shared"))
     implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.browser:browser:1.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 }

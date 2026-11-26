@@ -16,7 +16,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
@@ -48,6 +47,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
         save:(ByteArray,(Result<Unit>)->Unit)->Unit,
         saveColabJob:(ByteArray,(Result<Unit>)->Unit)->Unit,
         importColabResult:((Result<Map<RigMode,GeneratedModel>>)->Unit)->Unit,
+        openColab:(ColabBrowserRequest)->ColabBrowserSurface,
         bitmap:(ViewImage)->ImageBitmap, decodeTexture:(ByteArray)->IntArray, desktop:Boolean,
         generate:suspend (List<ViewImage>,Int,Boolean,(String)->Unit)->ReconstructionSession) {
     var installed by remember { mutableStateOf(modelInstalled()) }
@@ -58,6 +58,8 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
     var automaticMask by remember { mutableStateOf(true) }
     var colabTemplate by remember { mutableStateOf(false) }
     var colabLearned by remember { mutableStateOf(false) }
+    var colabBrowserSurface by remember { mutableStateOf<ColabBrowserSurface?>(null) }
+    var colabBrowserError by remember { mutableStateOf<String?>(null) }
     var images by remember { mutableStateOf(emptyList<ViewImage>()) }
     var selected by remember { mutableStateOf<ViewImage?>(null) }
     var edgeFragments by remember { mutableStateOf(emptyMap<ViewImage,EdgeFragments>()) }
@@ -79,7 +81,14 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
     var status by remember { mutableStateOf("Ready") }
     var transfer by remember { mutableStateOf<TransferProgress?>(null) }
     val scope=rememberCoroutineScope()
-    val uriHandler=LocalUriHandler.current
+    fun launchNotebook(request:ColabBrowserRequest) {
+        try {
+            colabBrowserSurface=openColab(request)
+            colabBrowserError=null
+        } catch(e:Exception) {
+            colabBrowserError=e.message ?: "No browser available."
+        }
+    }
     DisposableEffect(session) {
         val current=session
         onDispose { current?.close?.invoke() }
@@ -216,7 +225,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                         Card(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                                 Text("Colab · Experimental",style=MaterialTheme.typography.titleMedium)
-                                Text("Use your own Google account. Export an ordered job and upload it in the notebook. Local reconstruction remains available.",
+                                Text("Use your own Google account in the actual Colab notebook. Export an ordered job and upload it there. Local reconstruction remains available.",
                                     style=MaterialTheme.typography.bodySmall)
                                 Text("Remote rig variants (unrigged always included)",style=MaterialTheme.typography.labelMedium)
                                 Row(verticalAlignment=Alignment.CenterVertically) {
@@ -242,11 +251,28 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                                         catch(e:OutOfMemoryError) {busy=false;status="Not enough memory to export job."}
                                     }
                                 }) { Text("Export Colab job") }
-                                OutlinedButton(enabled=!busy,onClick={
-                                    try {
-                                        uriHandler.openUri("https://colab.research.google.com/github/HereLiesAz/ExtrusionExtraction/blob/main/notebooks/ExtrusionExtraction.ipynb")
-                                    } catch(e:Exception) { status="Cannot open Colab: ${e.message ?: "Browser unavailable"}" }
-                                }) { Text("Open Colab notebook") }
+                                HorizontalDivider()
+                                Text("Live notebook",style=MaterialTheme.typography.titleSmall)
+                                Text(colabBrowserSurface?.description ?: if(desktop)
+                                    "Opens the real notebook in your default browser."
+                                    else "Opens the real notebook in an expandable browser-owned panel when supported.",
+                                    style=MaterialTheme.typography.bodySmall)
+                                colabBrowserError?.let {
+                                    Text("Cannot open Colab: $it",color=MaterialTheme.colorScheme.error,
+                                        style=MaterialTheme.typography.bodySmall)
+                                }
+                                if(!desktop) {
+                                    Button(enabled=!busy,onClick={launchNotebook(ColabBrowserRequest.PANEL)}) {
+                                        Text(if(colabBrowserSurface==null)"Open Colab panel" else "Open Colab panel again")
+                                    }
+                                }
+                                OutlinedButton(enabled=!busy,onClick={launchNotebook(ColabBrowserRequest.BROWSER)}) {
+                                    Text(if(desktop && colabBrowserSurface==null)"Open Colab notebook" else "Open in browser")
+                                }
+                                if(colabBrowserSurface!=null) {
+                                    Text("Browser launch is not a runtime connection. To resume a running notebook, use its existing browser tab.",
+                                        style=MaterialTheme.typography.labelSmall)
+                                }
                                 OutlinedButton(enabled=!busy,onClick={
                                     begin("Importing Colab result")
                                     importColabResult { result->

@@ -134,6 +134,7 @@ class MainActivity:ComponentActivity() {
                     { bytes,done->pending=bytes;saveDone=done;saver.launch("model.glb") },
                     { bytes,done->pending=bytes;saveDone=done;jobSaver.launch("reconstruction.eejob") },
                     { done->resultDone=done;resultPicker.launch(arrayOf("*/*")) },
+                    { request->openColabNotebook(this@MainActivity,request) },
                     { image->Bitmap.createBitmap(image.argb,IMAGE_SIZE,IMAGE_SIZE,Bitmap.Config.ARGB_8888).asImageBitmap() },
                     { png ->
                         val decoded=BitmapFactory.decodeByteArray(png,0,png.size) ?: error("Invalid texture PNG.")
