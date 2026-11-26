@@ -51,6 +51,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
         selectLearned:((TransferProgress)->Unit,(Result<Unit>)->Unit)->Unit,
         selectImages:((Result<List<ViewImage>>)->Unit)->Unit,
         save:(ByteArray,(Result<Unit>)->Unit)->Unit,
+        saveColabJob:(ByteArray,(Result<Unit>)->Unit)->Unit,
         bitmap:(ViewImage)->ImageBitmap, decodeTexture:(ByteArray)->IntArray, desktop:Boolean,
         generate:suspend (List<ViewImage>,Int,Boolean,(String)->Unit)->ReconstructionSession) {
     var installed by remember { mutableStateOf(modelInstalled()) }
@@ -58,6 +59,8 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
     var learnedReady by remember { mutableStateOf(learnedInstalled()) }
     val nativeReady=remember { learnedAvailable() }
     var automaticMask by remember { mutableStateOf(true) }
+    var colabTemplate by remember { mutableStateOf(false) }
+    var colabLearned by remember { mutableStateOf(false) }
     var images by remember { mutableStateOf(emptyList<ViewImage>()) }
     var selected by remember { mutableStateOf<ViewImage?>(null) }
     var playing by remember { mutableStateOf(false) }
@@ -203,8 +206,32 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                         Card(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                                 Text("Colab · Experimental",style=MaterialTheme.typography.titleMedium)
-                                Text("Run the actual notebook using your own Google account. Local reconstruction remains available. Upload references and download results in Colab.",
+                                Text("Use your own Google account. Export an ordered job and upload it in the notebook. Local reconstruction remains available.",
                                     style=MaterialTheme.typography.bodySmall)
+                                Text("Remote rig variants (unrigged always included)",style=MaterialTheme.typography.labelMedium)
+                                Row(verticalAlignment=Alignment.CenterVertically) {
+                                    Checkbox(checked=colabTemplate,onCheckedChange={colabTemplate=it},enabled=!busy)
+                                    Text("Humanoid T-pose")
+                                }
+                                Row(verticalAlignment=Alignment.CenterVertically) {
+                                    Checkbox(checked=colabLearned,onCheckedChange={colabLearned=it},enabled=!busy)
+                                    Text("SkinTokens")
+                                }
+                                OutlinedButton(enabled=!busy && images.size>=VIEW_COUNT,onClick={
+                                    val job=ColabJob(images.toList(),resolution.toInt(),automaticMask,colabTemplate,colabLearned)
+                                    begin("Preparing Colab job")
+                                    scope.launch {
+                                        try {
+                                            val bytes=withContext(Dispatchers.Default){encodeColabJob(job)}
+                                            saveColabJob(bytes){result->
+                                                busy=false
+                                                status=result.fold({"Job saved. Open Colab and upload the .eejob file."},{it.message ?: "Job export failed."})
+                                            }
+                                        } catch(e:CancellationException) { busy=false;throw e }
+                                        catch(e:Exception) {busy=false;status=e.message ?: "Job export failed."}
+                                        catch(e:OutOfMemoryError) {busy=false;status="Not enough memory to export job."}
+                                    }
+                                }) { Text("Export Colab job") }
                                 OutlinedButton(enabled=!busy,onClick={
                                     try {
                                         uriHandler.openUri("https://colab.research.google.com/github/HereLiesAz/ExtrusionExtraction/blob/main/notebooks/ExtrusionExtraction.ipynb")

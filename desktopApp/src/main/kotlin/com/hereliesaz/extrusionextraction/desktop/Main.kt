@@ -22,10 +22,10 @@ fun main()=application {
     val foreground=segmentationFile(model)
     Window(onCloseRequest=::exitApplication,title="Extrusion Extraction") {
         val scope=rememberCoroutineScope()
-        fun choose(title:String,mode:Int,multiple:Boolean=false):Array<File> {
+        fun choose(title:String,mode:Int,multiple:Boolean=false,defaultName:String="model.glb"):Array<File> {
             val dialog=FileDialog(null as Frame?,title,mode)
             dialog.isMultipleMode=multiple
-            if(mode==FileDialog.SAVE) dialog.file="model.glb"
+            if(mode==FileDialog.SAVE) dialog.file=defaultName
             dialog.isVisible=true
             return dialog.files.also { dialog.dispose() }
         }
@@ -67,6 +67,14 @@ fun main()=application {
                 scope.launch { done(withContext(Dispatchers.IO) { runCatching {
                     require(file!=null) { "Export cancelled." }
                     val destination=if(file.name.endsWith(".glb",true)) file else File(file.path+".glb")
+                    destination.writeBytes(bytes)
+                } }) }
+            },
+            { bytes,done->
+                val file=choose("Export Colab job",FileDialog.SAVE,defaultName="reconstruction.eejob").firstOrNull()
+                scope.launch { done(withContext(Dispatchers.IO) { runCatching {
+                    require(file!=null) { "Export cancelled." }
+                    val destination=if(file.name.endsWith(".eejob",true)) file else File(file.path+".eejob")
                     destination.writeBytes(bytes)
                 } }) }
             },

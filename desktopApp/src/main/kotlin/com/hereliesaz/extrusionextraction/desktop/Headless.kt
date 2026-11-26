@@ -8,31 +8,40 @@ import kotlinx.coroutines.runBlocking
 
 /** Headless notebook entry point using the production reconstruction engine and session. */
 fun main(args: Array<String>) = runBlocking {
-    require(args.size in (5+VIEW_COUNT)..(5+MAX_REFERENCES)) {
-        "Usage: <model-dir> <new-output-dir> <cells> <mask|no-mask> <none|template|learned|both> <ordered-images...>"
+    val fromJob=args.firstOrNull()=="--job"
+    require(if(fromJob) args.size==4 else args.size in (5+VIEW_COUNT)..(5+MAX_REFERENCES)) {
+        "Usage: --job <model-dir> <new-output-dir> <eejob-file> OR <model-dir> <new-output-dir> <cells> <mask|no-mask> <none|template|learned|both> <ordered-images...>"
     }
-    val modelDir = File(args[0]).absoluteFile
-    val output = File(args[1]).absoluteFile
-    val cells = args[2].toInt()
-    require(cells in 32..96) { "Mesh detail must be 32–96 cells per axis." }
-    val mask = when (args[3]) {
-        "mask" -> true
-        "no-mask" -> false
-        else -> error("Specify mask or no-mask.")
-    }
-    val modes = when (args[4]) {
-        "none" -> emptyList()
-        "template" -> listOf(RigMode.TEMPLATE)
-        "learned" -> listOf(RigMode.LEARNED)
-        "both" -> listOf(RigMode.TEMPLATE, RigMode.LEARNED)
-        else -> error("Unknown rig selection.")
-    }
-    val refs = args.drop(5).map { File(it).canonicalFile }
-    require(refs.size in VIEW_COUNT..MAX_REFERENCES && refs.distinct().size == refs.size && refs.all { it.isFile }) {
-        "Provide distinct, ordered reference files."
-    }
+    val modelDir=File(args[if(fromJob)1 else 0]).absoluteFile
+    val output=File(args[if(fromJob)2 else 1]).absoluteFile
     require(!output.exists()) { "Choose a fresh output directory." }
-    val images = refs.map(::decodeReference)
+    val job=if(fromJob) {
+        val file=File(args[3])
+        require(file.isFile && file.length() in 16L..MAX_COLAB_JOB_BYTES.toLong()) { "Invalid job file size." }
+        // Bound the read even if an external writer changes the file after the size check.
+        val bytes=file.inputStream().use{it.readNBytes(MAX_COLAB_JOB_BYTES+1)}
+        decodeColabJob(bytes)
+    } else {
+        val cells=args[2].toInt()
+        require(cells in 32..96) { "Mesh detail must be 32–96 cells per axis." }
+        val mask=when(args[3]) {
+            "mask" -> true
+            "no-mask" -> false
+            else -> error("Specify mask or no-mask.")
+        }
+        val rig=args[4]
+        require(rig in listOf("none","template","learned","both")) { "Unknown rig selection." }
+        val refs=args.drop(5).map{File(it).canonicalFile}
+        require(refs.distinct().size==refs.size && refs.all{it.isFile}) { "Provide distinct, ordered reference files." }
+        ColabJob(refs.map(::decodeReference),cells,mask,rig=="template" || rig=="both",rig=="learned" || rig=="both")
+    }
+    val cells=job.cells
+    val mask=job.mask
+    val images=job.images
+    val modes=buildList {
+        if(job.template) add(RigMode.TEMPLATE)
+        if(job.learned) add(RigMode.LEARNED)
+    }
     val model = File(modelDir, "da3.onnx")
     fun report(message: String) { println(message) }
     if (model.isFile) installModel(model.inputStream(), model) else downloadModel(model, ::report)
