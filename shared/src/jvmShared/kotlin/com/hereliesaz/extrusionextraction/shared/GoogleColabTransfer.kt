@@ -114,18 +114,24 @@ class GoogleColabTransfer(private val accessToken:String):ColabTransfer {
             colabPairPath(code)
             val p=proxy(runtime)
             val path=verify(p,code)
-            // The notebook moves the input to claimed.eejob before running. Never overwrite either.
-            for(file in listOf("job.eejob","claimed.eejob")) {
-                request(p.url+"/api/contents/$path/$file?content=0",PROXY_HEADER,p.token) {
-                    if(it.responseCode==200) error("This pairing already has a job. Create a new notebook pairing.")
-                    status(it,setOf(404))
+            // Never overwrite another submission. Even concurrent clients use distinct UUIDs;
+            // the notebook rejects ambiguous multiple submissions rather than choosing one.
+            val entries=request(p.url+"/api/contents/$path",PROXY_HEADER,p.token) {
+                status(it)
+                it.inputStream.use { stream->
+                    Json.parseToJsonElement(boundedText(stream,1024*1024)).jsonObject
+                        .getValue("content").jsonArray.map { entry->entry.jsonObject.getValue("name").jsonPrimitive.content }
                 }
             }
+            require(entries.none { it=="claimed.eejob" || it.startsWith("job-") && it.endsWith(".eejob") }) {
+                "This pairing already has a job. Create a new notebook pairing."
+            }
+            val filename="job-"+java.util.UUID.randomUUID().toString()+".eejob"
             val bytes=encodeColabJob(job)
-            val prefix="""{"type":"file","format":"base64","content":"""".encodeToByteArray()
+            val prefix="{\"type\":\"file\",\"format\":\"base64\",\"content\":\"".encodeToByteArray()
             val suffix="\"}".encodeToByteArray()
             val total=prefix.size.toLong()+4L*((bytes.size.toLong()+2)/3)+suffix.size
-            request(p.url+"/api/contents/$path/job.eejob",PROXY_HEADER,p.token,"PUT",body={ connection->
+            request(p.url+"/api/contents/$path/$filename",PROXY_HEADER,p.token,"PUT",body={ connection->
                 connection.doOutput=true
                 connection.setRequestProperty("Content-Type","application/json")
                 connection.setFixedLengthStreamingMode(total)
