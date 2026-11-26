@@ -29,7 +29,12 @@ compose.desktop {
                 packageVersion = macInstallerVersion
                 iconFile.set(project.file("icons/icon.icns"))
             }
-            windows { iconFile.set(project.file("icons/icon.ico")) }
+            windows {
+                iconFile.set(project.file("icons/icon.ico"))
+                // jpackage does not create a Start menu entry unless explicitly requested.
+                menu = true
+                menuGroup = "ExtrusionExtraction"
+            }
             linux { iconFile.set(project.file("icons/icon.png")) }
             modules("java.desktop", "java.logging", "jdk.unsupported")
         }

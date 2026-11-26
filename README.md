@@ -4,6 +4,8 @@ Reconstruct textured, rigged 3D models from overlapping reference images and exp
 
 ## Use
 
+On Windows, install the MSI and launch **ExtrusionExtraction** from the Start menu.
+
 1. Select **Download model**, or import the exact full-precision `model.onnx` from [DA3-Base 4-view ONNX](https://huggingface.co/Heliosoph/da3-base-4view-onnx/blob/58036ce15ce3510c89d954820f15725a4c896fc8/model.onnx). Both paths verify SHA-256 before opening the graph. The graph is not bundled.
 2. Import 4–24 overlapping images of the same static subject, upright front view first. Automatic foreground isolation uses a separately downloadable, checksum-pinned U²-Net portable graph. Existing transparent masks are preserved; disable automatic masking for already isolated opaque references or scene reconstruction. Use square, consistently framed images; current adapters resize to the model's square grid.
 3. Download or import the foreground model if automatic masking is enabled and any input lacks alpha. Choose fusion resolution and whether to attach the experimental humanoid T-pose rig. A SkinTokens option uses pinned model identities and requires an optional compatible native build; see [native learned rigging](docs/SKINTOKENS.md).
