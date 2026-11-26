@@ -1,6 +1,6 @@
 # Extrusion Extraction
 
-Reconstruct textured, rigged 3D models from overlapping reference images and export them as GLB files. Available for Android (including compatible ChromeOS devices), Windows, macOS and Linux.
+Reconstruct textured, rigged 3D models from overlapping reference images and export them as GLB files. Available for Android (including compatible ChromeOS devices), Windows, macOS and Linux, with an experimental browser workspace.
 
 ## Use
 
@@ -25,6 +25,8 @@ JDK 17, Android SDK 35 and Gradle wrapper. On Windows use `gradlew.bat`.
 - Desktop development: `./gradlew :desktopApp:run`
 - Native installer on each host OS: `./gradlew :desktopApp:packageDistributionForCurrentOS` (MSI, DMG, DEB; installers are not cross-built).
 - Shared tests: `./gradlew :shared:desktopTest`
+- Web development: `./gradlew -p webApp jsBrowserDevelopmentRun`
+- Static web distribution: `./gradlew -p webApp jsBrowserDistribution` (serve `webApp/build/dist/js/productionExecutable`). See [web workspace](docs/WEB.md).
 - Optional pinned native rigging preparation/build: `python scripts/build_skintokens.py` (`--prepare-only` for Android). See [native integration](docs/SKINTOKENS.md).
 
 Release packaging is requested through the central HereLiesAz workflow catalog, not a repository-local workflow implementation. The central packaging workflow requires a successful native matrix and Linux model-backed smoke test before publication. Main-branch builds produce immutable `vMAJOR.MINOR.PATCH.BUILD` tags and append five architecture-specific installers, the Colab Linux worker when available, plus `SHA256SUMS-MAJOR.MINOR.PATCH.BUILD.txt` to the accumulating `vMAJOR.MINOR` release on the [GitHub Releases page](https://github.com/HereLiesAz/ExtrusionExtraction/releases). The central publisher rejects asset collisions with differing bytes; superseded builds are skipped before publication. Existing releases are retained. The Android publisher requires the configured `KEYSTORE_RAW`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, and `KEY_PASSWORD` secrets in the `ExtrusionExtraction` environment of the central workflows repository. Missing credentials block the complete prerelease. Android release builds use an explicit positive `eeReleaseVersionCode` supplied by the central workflow, and the unsigned APK is signed only by the isolated publisher using configured release credentials. No debug-signed APK is a release asset. Desktop installers remain unsigned/unnotarized until platform signing is configured. macOS DMG installer metadata uses product major + 1 to satisfy its positive-major requirement while preserving the canonical product version in version.properties, Android and other desktop packages.
