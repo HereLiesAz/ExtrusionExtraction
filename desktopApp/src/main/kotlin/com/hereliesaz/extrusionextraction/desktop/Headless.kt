@@ -8,9 +8,13 @@ import kotlinx.coroutines.runBlocking
 
 /** Headless notebook entry point using the production reconstruction engine and session. */
 fun main(args: Array<String>) = runBlocking {
+    val acceleration=parseReconstructionAcceleration(System.getenv("EE_COLAB_ONNX"),System.getenv("EE_COLAB_SKINTOKENS"))
     if(args.contentEquals(arrayOf("--check"))) {
-        checkReconstructionRuntime()
+        checkReconstructionRuntime(acceleration.onnx)
+        println("ONNX execution probe passed: "+acceleration.onnx.name)
         check(SkinTokensEngine.available()) { "SkinTokens native runtime unavailable." }
+        check(SkinTokensEngine.supports(acceleration.learnedRig)) { "Requested SkinTokens backend is not packaged: "+acceleration.learnedRig.name }
+        println("SkinTokens build capability: "+acceleration.learnedRig.name+" (model execution not probed)")
         println("EE_WORKER_READY")
         return@runBlocking
     }
@@ -41,6 +45,8 @@ fun main(args: Array<String>) = runBlocking {
         require(refs.distinct().size==refs.size && refs.all{it.isFile}) { "Provide distinct, ordered reference files." }
         ColabJob(refs.map(::decodeReference),cells,mask,rig=="template" || rig=="both",rig=="learned" || rig=="both")
     }
+    // Fail early if the explicitly selected ONNX provider cannot execute a real graph.
+    if(acceleration.onnx==OnnxDevice.CUDA) checkReconstructionRuntime(acceleration.onnx)
     val cells=job.cells
     val mask=job.mask
     val images=job.images
@@ -95,13 +101,13 @@ fun main(args: Array<String>) = runBlocking {
         } finally { temporary.delete() }
     }
     val failures=try {
-        val session=generateLocal(model,images,cells,mask,::report)
+        val session=generateLocal(model,images,cells,mask,acceleration,::report)
         try {
             publish("unrigged.glb",session.base.glb)
             publishResult(RigMode.NONE,session.base)
             runRigVariants(modes) { mode->
                 if(mode==RigMode.LEARNED) {
-                    check(SkinTokensEngine.available()) { "SkinTokens native runtime unavailable." }
+                    check(SkinTokensEngine.supports(acceleration.learnedRig)) { "Requested SkinTokens backend is not packaged: "+acceleration.learnedRig.name }
                     if(!SkinTokensEngine.installed(model)) {
                         report("Acquiring verified SkinTokens models")
                         SkinTokensEngine.download(model,::transfer)

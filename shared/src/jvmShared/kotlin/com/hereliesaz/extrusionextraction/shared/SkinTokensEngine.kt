@@ -23,6 +23,11 @@ object SkinTokensEngine {
     }
     /** Only offer acquisition when a compatible packaged native runtime exists. */
     fun available():Boolean = nativeFailure==null
+    /** Build capability only: an actual Vulkan model load must still find a usable device. */
+    fun supports(device:LearnedRigDevice):Boolean = available() && when(device) {
+        LearnedRigDevice.CPU->true
+        LearnedRigDevice.VULKAN->try { nativeVulkanBuilt() } catch(_:LinkageError) { false }
+    }
     /** Actual load failure, including missing native dependencies and ABI mismatches. */
     fun unavailableReason():String? = nativeFailure
     private fun directory(depthModel:File)=File(depthModel.parentFile,"skintokens-f16")
@@ -84,8 +89,13 @@ object SkinTokensEngine {
         } finally { staging.deleteRecursively() }
     }
     /** Predict joints and weights for the original indexed mesh, never modifying its textures or vertices. */
+    fun rig(depthModel:File,mesh:Mesh,checkpoint:()->Unit):Rig =
+        rig(depthModel,mesh,LearnedRigDevice.CPU,checkpoint)
+
+    /** Never substitute CPU for an explicit Vulkan request. CPU JNI stays ABI-compatible. */
     @Synchronized
-    fun rig(depthModel:File,mesh:Mesh,checkpoint:()->Unit):Rig {
+    fun rig(depthModel:File,mesh:Mesh,device:LearnedRigDevice,checkpoint:()->Unit):Rig {
+        check(supports(device)) { "Requested SkinTokens backend is not packaged: "+device.name }
         check(installed(depthModel)){"Install the verified SkinTokens bundle first."}
         val folder=directory(depthModel)
         for(component in skinTokensComponents) File(folder,component.name).inputStream().buffered().use {
@@ -94,10 +104,15 @@ object SkinTokensEngine {
         val xyz=FloatArray(mesh.vertices.size*3)
         for((i,v) in mesh.vertices.withIndex()){if(i%2048==0)checkpoint();xyz[i*3]=v.x;xyz[i*3+1]=v.y;xyz[i*3+2]=v.z}
         checkpoint()
-        val packet=predict(folder.absolutePath,xyz,mesh.indices)
+        val packet=when(device) {
+            LearnedRigDevice.CPU->predict(folder.absolutePath,xyz,mesh.indices)
+            LearnedRigDevice.VULKAN->predictVulkan(folder.absolutePath,xyz,mesh.indices)
+        }
         checkpoint()
         return decodeLearnedRig(packet,mesh.vertices.size)
     }
     private external fun nativeAbi():Int
+    private external fun nativeVulkanBuilt():Boolean
+    private external fun predictVulkan(bundle:String,positions:FloatArray,triangles:IntArray):FloatArray
     private external fun predict(bundle:String,positions:FloatArray,triangles:IntArray):FloatArray
 }

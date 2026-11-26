@@ -33,13 +33,17 @@ fun downloadSegmentation(destination:File,transfer:(TransferProgress)->Unit={}) 
 /** Segment only references lacking user-supplied alpha, using one local session.
  * Releases the segmentation session before DA3 starts to reduce peak RAM.
  */
-suspend fun segmentForeground(model:File,images:List<ViewImage>,progress:(String)->Unit):List<ViewImage> {
+suspend fun segmentForeground(model:File,images:List<ViewImage>,progress:(String)->Unit):List<ViewImage> =
+    segmentForeground(model,images,OnnxDevice.CPU,progress)
+
+/** The selected ONNX execution provider is shared with the depth stage. */
+suspend fun segmentForeground(model:File,images:List<ViewImage>,device:OnnxDevice,progress:(String)->Unit):List<ViewImage> {
     if(images.all(::hasForegroundMask)) return images
     require(model.isFile) { "Download the foreground model, or disable automatic masking." }
     val context=currentCoroutineContext()
     val env=OrtEnvironment.getEnvironment()
     return OrtSession.SessionOptions().use { options ->
-        options.setIntraOpNumThreads(minOf(4,Runtime.getRuntime().availableProcessors()))
+        options.configureReconstruction(device)
         env.createSession(model.absolutePath,options).use { session ->
             val name=session.inputNames.single()
             var completed=0
