@@ -99,11 +99,10 @@ internal fun downloadVerifiedGraph(source:String,onLength:(Long?)->Unit={},insta
 }
 
 /** Both platforms run identical local inference windows, alignment, fusion and skin export. */
-suspend fun generateLocal(model:File, images:List<ViewImage>, rig:RigMode, resolution:Int,
+suspend fun generateLocal(model:File, images:List<ViewImage>, resolution:Int,
                           automaticMask:Boolean,
-                          progress:(String)->Unit, preview:(Mesh)->Unit={}):ByteArray = withContext(Dispatchers.Default) {
+                          progress:(String)->Unit):ReconstructionSession = withContext(Dispatchers.Default) {
     require(model.isFile) { "Import the DA3 four-view model first." }
-    require(rig!=RigMode.LEARNED || SkinTokensEngine.installed(model)) { "Verified learned rig model is unavailable." }
     val windows=viewWindows(images.size)
     val context=currentCoroutineContext()
     // Keep original RGB for DA3 pose estimation; use the learned alpha only for geometry.
@@ -156,8 +155,13 @@ suspend fun generateLocal(model:File, images:List<ViewImage>, rig:RigMode, resol
     progress("Checking geometric intersections")
     val collision=firstNonAdjacentIntersection(mesh) { context.ensureActive() }
     require(collision==null) { "Intersecting non-adjacent faces: "+collision+". Improve reference coverage." }
-    // Establish the provisional skeleton before simplification so joints do not drift.
-    val joints=if(rig==RigMode.TEMPLATE) humanoidJoints(mesh) else null
+    val calibratedViews=views
+    val buildVariant:suspend (RigMode,(String)->Unit)->GeneratedModel={ rig, progress ->
+        withContext(Dispatchers.Default) {
+            val context=currentCoroutineContext()
+            require(rig!=RigMode.LEARNED || SkinTokensEngine.installed(model)) { "Verified learned rig model is unavailable." }
+            // Establish the provisional skeleton before simplification so joints do not drift.
+            val joints=if(rig==RigMode.TEMPLATE) humanoidJoints(mesh) else null
     val protected=joints?.let(::jointProtection) ?: { _:Vec3 -> false }
     progress(if(joints!=null) "Simplifying while preserving joint neighborhoods" else "Simplifying planar regions")
     // Learned joint locations are unknown until inference; retain original detail.
@@ -200,12 +204,14 @@ suspend fun generateLocal(model:File, images:List<ViewImage>, rig:RigMode, resol
     val finalMesh=refinement?.mesh?:optimized
     val finalRig=refinement?.rig?:bound
     progress("Matching reference exposures")
-    val photo=PhotoTexture(surface.frame,views)
+    val photo=PhotoTexture(surface.frame,calibratedViews)
     photo.matchExposure(finalMesh) { context.ensureActive() }
     progress("Reprojecting calibrated photos into texture atlas")
     val atlas=bakeTextureAtlas(finalMesh,photo) { context.ensureActive() }
     if(atlas==null) progress("Atlas budget exceeded; exporting vertex colors")
-    preview(finalMesh)
     progress("Writing GLB")
-    writeGlb(finalMesh,finalRig,atlas)
+    GeneratedModel(finalMesh,finalRig,atlas,writeGlb(finalMesh,finalRig,atlas))
+        }
+    }
+    ReconstructionSession(buildVariant(RigMode.NONE,progress),buildVariant)
 }

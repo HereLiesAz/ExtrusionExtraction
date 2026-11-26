@@ -21,6 +21,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.cos
@@ -50,8 +54,8 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
         selectLearned:((TransferProgress)->Unit,(Result<Unit>)->Unit)->Unit,
         selectImages:((Result<List<ViewImage>>)->Unit)->Unit,
         save:(ByteArray,(Result<Unit>)->Unit)->Unit,
-        bitmap:(ViewImage)->ImageBitmap, desktop:Boolean,
-        generate:suspend (List<ViewImage>,RigMode,Int,Boolean,(String)->Unit,(Mesh)->Unit)->ByteArray) {
+        bitmap:(ViewImage)->ImageBitmap, decodeTexture:(ByteArray)->IntArray, desktop:Boolean,
+        generate:suspend (List<ViewImage>,Int,Boolean,(String)->Unit)->ReconstructionSession) {
     var installed by remember { mutableStateOf(modelInstalled()) }
     var foregroundInstalled by remember { mutableStateOf(segmentationInstalled()) }
     var learnedReady by remember { mutableStateOf(learnedInstalled()) }
@@ -61,23 +65,32 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
     var selected by remember { mutableStateOf<ViewImage?>(null) }
     var playing by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
-    var rig by remember { mutableStateOf(RigMode.TEMPLATE) }
     var resolution by remember { mutableStateOf(72f) }
-    var output by remember { mutableStateOf<ByteArray?>(null) }
-    var mesh by remember { mutableStateOf<Mesh?>(null) }
+    var session by remember { mutableStateOf<ReconstructionSession?>(null) }
+    var variants by remember { mutableStateOf(emptyMap<RigMode,GeneratedModel>()) }
+    var activeVariant by remember { mutableStateOf(RigMode.NONE) }
+    val model=variants[activeVariant]
+    val output=model?.glb
+    var generationResult by remember { mutableStateOf("No model generated") }
+    var generationFailed by remember { mutableStateOf(false) }
+    var wire by remember { mutableStateOf(false) }
+    var texture by remember { mutableStateOf(true) }
+    var skeleton by remember { mutableStateOf(true) }
     var showMesh by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Ready") }
     var transfer by remember { mutableStateOf<TransferProgress?>(null) }
     val scope=rememberCoroutineScope()
-    fun invalidate() { output=null; mesh=null; showMesh=false }
+    fun invalidate() {
+        session=null; variants=emptyMap(); activeVariant=RigMode.NONE; showMesh=false
+        generationResult="Inputs changed. Generate a model."; generationFailed=false
+    }
     fun refresh() {
         installed=modelInstalled(); foregroundInstalled=segmentationInstalled(); learnedReady=learnedInstalled()
-        if(rig==RigMode.LEARNED && !learnedReady) rig=RigMode.TEMPLATE
     }
     fun begin(label:String) { busy=true; status=label; transfer=null }
     fun finish(result:Result<Unit>,label:String) {
         refresh(); transfer=null; busy=false
-        result.onSuccess { invalidate(); status=label }.onFailure { status=it.message ?: "Operation failed." }
+        result.onSuccess { status=label }.onFailure { status=it.message ?: "Operation failed." }
     }
     val report:(TransferProgress)->Unit={ value -> scope.launch { if(busy) { transfer=value; status=value.label } } }
     fun acquire(label:String,action:suspend ((TransferProgress)->Unit)->Unit) {
@@ -92,6 +105,38 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
     }
     fun importGraph(label:String,action:((TransferProgress)->Unit,(Result<Unit>)->Unit)->Unit) {
         begin(label); action(report) { finish(it,"Model installed.") }
+    }
+    fun runModelOperation(label:String,task:suspend ((String)->Unit)->Unit) {
+        playing=false; begin(label)
+        generationResult=label; generationFailed=false
+        scope.launch {
+            var stage=label
+            try {
+                task { message ->
+                    stage=message
+                    scope.launch { if(busy) { transfer=null; status=message } }
+                }
+                status="Completed"
+                generationResult="Completed: " + label
+            } catch(e:CancellationException) {
+                generationResult="Cancelled: $stage"; generationFailed=true; status=generationResult
+                throw e
+            } catch(e:Exception) {
+                generationResult="Failed at $stage: ${e.message ?: e::class.simpleName ?: "Unknown error"}"
+                generationFailed=true; status=generationResult
+            } catch(e:OutOfMemoryError) {
+                generationResult="Failed at $stage: insufficient memory. Reduce fusion resolution or reference count."
+                generationFailed=true; status=generationResult
+            } finally { busy=false; transfer=null }
+        }
+    }
+    fun applyRig(mode:RigMode) {
+        val current=session ?: return
+        if(variants.containsKey(mode)) { activeVariant=mode; showMesh=true; playing=false; return }
+        runModelOperation(if(mode==RigMode.TEMPLATE) "Humanoid rig" else "SkinTokens rig") { report ->
+            val generated=current.createVariant(mode,report)
+            variants=variants+(mode to generated); activeVariant=mode; showMesh=true
+        }
     }
     LaunchedEffect(playing,images) {
         while(playing && images.size>1) {
@@ -110,6 +155,10 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
             Column(Modifier.fillMaxSize().padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                 Text("Extrusion Extraction",style=MaterialTheme.typography.headlineMedium)
                 Text(status,style=MaterialTheme.typography.bodyMedium)
+                Text(generationResult,color=if(generationFailed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    style=MaterialTheme.typography.bodyMedium)
+                model?.let { Text("${it.mesh.vertices.size} vertices · ${it.mesh.indices.size/3} triangles · ${it.rig?.joints?.size ?: 0} joints · GLB ready",
+                    style=MaterialTheme.typography.labelMedium) }
                 if(busy) {
                     val fraction=transfer?.fraction
                     if(fraction==null) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -125,7 +174,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                     Column(modifier,verticalArrangement=Arrangement.spacedBy(6.dp)) {
                         Row(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalAlignment=Alignment.CenterVertically) {
                             Text("Preview",style=MaterialTheme.typography.titleMedium)
-                            if(mesh!=null) {
+                            if(model!=null) {
                                 TextButton(onClick={showMesh=true;playing=false}) { Text("Surface") }
                                 TextButton(onClick={showMesh=false}) { Text("References") }
                             }
@@ -133,14 +182,22 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                         Box(Modifier.weight(1f).fillMaxWidth().border(1.dp,MaterialTheme.colorScheme.outline),
                             contentAlignment=Alignment.Center) {
                             val current=selected ?: images.firstOrNull()
-                            val surface=mesh
-                            if(showMesh && surface!=null) SurfacePreview(surface,Modifier.fillMaxSize())
+                            val surface=model
+                            if(showMesh && surface!=null) SurfacePreview(surface,texture,wire,skeleton,bitmap,decodeTexture,Modifier.fillMaxSize())
                             else if(current!=null) Image(remember(current){bitmap(current)},current.name,
                                 Modifier.fillMaxSize(),contentScale=ContentScale.Fit)
                             else Text("No reference selected")
                         }
-                        if(showMesh && mesh!=null) Text("Geometry preview · drag to rotate",style=MaterialTheme.typography.labelSmall)
-                        else selected?.let { Text(it.name,maxLines=1,overflow=TextOverflow.Ellipsis) }
+                        if(showMesh && model!=null) {
+                            Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                                FilterChip(selected=texture,onClick={texture=!texture},label={Text("Texture")})
+                                FilterChip(selected=wire,onClick={wire=!wire},label={Text("Wireframe")})
+                                FilterChip(selected=skeleton && model.rig!=null,onClick={skeleton=!skeleton},
+                                    enabled=model.rig!=null,label={Text("Rig")})
+                            }
+                            Text(if(model.atlas==null) "Vertex colors · drag to rotate" else "Drag to rotate",
+                                style=MaterialTheme.typography.labelSmall)
+                        } else selected?.let { Text(it.name,maxLines=1,overflow=TextOverflow.Ellipsis) }
                     }
                 }
                 val controls:@Composable (Modifier)->Unit={ modifier ->
@@ -216,29 +273,34 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                         Text("Fusion resolution: ${resolution.toInt()}")
                         Slider(value=resolution,onValueChange={resolution=it;invalidate()},valueRange=32f..96f,steps=7,enabled=!busy)
                         Text("Rigging",style=MaterialTheme.typography.titleMedium)
-                        for(mode in RigMode.entries) Row(verticalAlignment=Alignment.CenterVertically) {
-                            RadioButton(selected=rig==mode,onClick={rig=mode;invalidate()},
-                                enabled=!busy && (mode!=RigMode.LEARNED || learnedReady))
-                            Text(when(mode){
-                                RigMode.NONE->"No rig"
-                                RigMode.TEMPLATE->"Humanoid T-pose template"
-                                RigMode.LEARNED->"SkinTokens learned skeleton and skin"
-                            })
+                        Text("Apply either rig after reconstruction. The unrigged model remains available.")
+                        Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                            for(mode in RigMode.entries) {
+                                val available=mode!=RigMode.LEARNED || learnedReady
+                                FilterChip(selected=model!=null && activeVariant==mode,
+                                    enabled=!busy && session!=null && available,
+                                    onClick={applyRig(mode)},label={Text(when(mode){
+                                        RigMode.NONE->"Unrigged"
+                                        RigMode.TEMPLATE->"Humanoid T-pose"
+                                        RigMode.LEARNED->"SkinTokens"
+                                    })})
+                            }
                         }
+                        if(!learnedReady) Text("Install SkinTokens to apply the learned rig.",style=MaterialTheme.typography.bodySmall)
+                        val blocked=when {
+                            !installed -> "Install DA3 first."
+                            images.size<VIEW_COUNT -> "Add at least $VIEW_COUNT reference images."
+                            automaticMask && !foregroundInstalled && !images.all(::hasForegroundMask) -> "Install U²-Net or disable automatic foreground segmentation."
+                            else -> null
+                        }
+                        blocked?.let { Text(it,color=MaterialTheme.colorScheme.error) }
                         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                            Button(enabled=!busy && installed && images.size>=VIEW_COUNT &&
-                                (!automaticMask || foregroundInstalled || images.all(::hasForegroundMask)),onClick={
-                                invalidate();playing=false;begin("Starting inference")
-                                val refs=images.toList();val useRig=rig;val voxels=resolution.toInt();val isolate=automaticMask
-                                scope.launch {
-                                    try {
-                                        output=generate(refs,useRig,voxels,isolate,
-                                            { message -> scope.launch { if(busy) {transfer=null;status=message} } },
-                                            { surface -> scope.launch { if(busy) {mesh=surface;showMesh=true} } })
-                                        status="GLB ready."
-                                    } catch(e:CancellationException) { throw e }
-                                    catch(e:Exception) { status=e.message ?: "Generation failed." }
-                                    finally { busy=false;transfer=null }
+                            Button(enabled=!busy && blocked==null,onClick={
+                                val refs=images.toList();val voxels=resolution.toInt();val isolate=automaticMask
+                                runModelOperation("3D reconstruction") { report ->
+                                    val result=generate(refs,voxels,isolate,report)
+                                    session=result;variants=mapOf(RigMode.NONE to result.base)
+                                    activeVariant=RigMode.NONE;showMesh=true
                                 }
                             }) { Text("Generate") }
                             OutlinedButton(enabled=!busy && output!=null,onClick={
@@ -256,7 +318,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                             preview(Modifier.weight(1f).fillMaxHeight())
                         }
                     } else Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                        if(images.isNotEmpty() || mesh!=null) preview(Modifier.fillMaxWidth().heightIn(max=220.dp).height(maxHeight*0.34f))
+                        if(images.isNotEmpty() || model!=null) preview(Modifier.fillMaxWidth().heightIn(max=220.dp).height(maxHeight*0.34f))
                         controls(Modifier.weight(1f).fillMaxWidth())
                     }
                 }
@@ -283,33 +345,43 @@ private fun ModelRow(name:String,description:String,status:String,canDownload:Bo
     }
 }
 
-/** Persistent, rotatable wireframe of the actual generated geometry; not a textured renderer. */
+/** Render the selected actual model with independently controlled display layers.
+ * Rasterization and PNG decoding happen off the UI thread; the last frame stays visible during rotation.
+ */
 @Composable
-private fun SurfacePreview(mesh:Mesh,modifier:Modifier) {
-    var yaw by remember(mesh){mutableStateOf(0.35f)}
-    var pitch by remember(mesh){mutableStateOf(0.15f)}
-    val edgeColor=MaterialTheme.colorScheme.primary.copy(alpha=0.55f)
-    val center=remember(mesh) {
-        Vec3((mesh.vertices.minOf{it.x}+mesh.vertices.maxOf{it.x})/2,
-            (mesh.vertices.minOf{it.y}+mesh.vertices.maxOf{it.y})/2,
-            (mesh.vertices.minOf{it.z}+mesh.vertices.maxOf{it.z})/2)
+private fun SurfacePreview(model:GeneratedModel,texture:Boolean,wire:Boolean,skeleton:Boolean,
+                           bitmap:(ViewImage)->ImageBitmap,decodeTexture:(ByteArray)->IntArray,modifier:Modifier) {
+    var yaw by remember { mutableStateOf(0.35f) }
+    var pitch by remember { mutableStateOf(0.15f) }
+    var frame by remember(model) { mutableStateOf<ImageBitmap?>(null) }
+    var pixels by remember(model) { mutableStateOf<IntArray?>(null) }
+    var decoded by remember(model) { mutableStateOf(false) }
+    var error by remember(model) { mutableStateOf<String?>(null) }
+    LaunchedEffect(model) {
+        try {
+            pixels=withContext(Dispatchers.Default) { model.atlas?.let { decodeTexture(it.png) } }
+            decoded=true
+        } catch(e:CancellationException) { throw e }
+        catch(e:Exception) { error="Texture preview failed: ${e.message ?: "Unable to decode atlas"}"; decoded=true }
+        catch(e:OutOfMemoryError) { error="Texture preview exceeds available memory."; decoded=true }
     }
-    val extent=remember(mesh,center){mesh.vertices.maxOf{val p=it-center; kotlin.math.sqrt(p.dot(p))}.coerceAtLeast(0.001f)}
-    Canvas(modifier.pointerInput(mesh) {
-        detectDragGestures { change,amount -> change.consume();yaw+=amount.x*0.01f;pitch+=amount.y*0.01f }
-    }) {
-        val scale=minOf(size.width,size.height)*0.45f/extent
-        fun project(v:Vec3):Offset {
-            val p=v-center;val x=p.x*cos(yaw)+p.z*sin(yaw);val z=-p.x*sin(yaw)+p.z*cos(yaw)
-            val y=p.y*cos(pitch)-z*sin(pitch)
-            return Offset(size.width/2+x*scale,size.height/2-y*scale)
-        }
-        val stride=maxOf(1,(mesh.indices.size/3+5999)/6000)*3
-        for(i in mesh.indices.indices step stride) {
-            val a=project(mesh.vertices[mesh.indices[i]])
-            val b=project(mesh.vertices[mesh.indices[i+1]])
-            val c=project(mesh.vertices[mesh.indices[i+2]])
-            drawLine(edgeColor,a,b);drawLine(edgeColor,b,c);drawLine(edgeColor,c,a)
-        }
+    LaunchedEffect(model,decoded,pixels,yaw,pitch,texture,wire,skeleton) {
+        if(!decoded) return@LaunchedEffect
+        try {
+            val image=withContext(Dispatchers.Default) {
+                val context=currentCoroutineContext()
+                renderModelPreview(model,pixels,yaw,pitch,texture,wire,skeleton) { context.ensureActive() }
+            }
+            frame=bitmap(image)
+        } catch(e:CancellationException) { throw e }
+        catch(e:Exception) { error="Preview failed: ${e.message ?: "Unknown error"}" }
+        catch(e:OutOfMemoryError) { error="Preview exceeds available memory." }
+    }
+    Box(modifier.pointerInput(model) {
+        detectDragGestures { change,amount -> change.consume();yaw+=amount.x*0.01f;pitch=(pitch+amount.y*0.01f).coerceIn(-1.55f,1.55f) }
+    },contentAlignment=Alignment.Center) {
+        frame?.let { Image(it,"Generated model",Modifier.fillMaxSize(),contentScale=ContentScale.Fit) }
+        if(frame==null && error==null) CircularProgressIndicator()
+        error?.let { Text(it,Modifier.align(Alignment.BottomCenter),color=MaterialTheme.colorScheme.error) }
     }
 }

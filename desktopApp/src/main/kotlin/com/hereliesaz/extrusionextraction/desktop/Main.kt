@@ -98,7 +98,10 @@ fun main()=application {
                 buffer.setRGB(0,0,IMAGE_SIZE,IMAGE_SIZE,image.argb,0,IMAGE_SIZE)
                 val encoded=ByteArrayOutputStream().also { ImageIO.write(buffer,"png",it) }.toByteArray()
                 org.jetbrains.skia.Image.makeFromEncoded(encoded).toComposeImageBitmap()
+            },{ png ->
+                val decoded=ImageIO.read(png.inputStream()) ?: error("Invalid texture PNG.")
+                decoded.getRGB(0,0,decoded.width,decoded.height,null,0,decoded.width)
             },true,
-            { images,rig,resolution,automaticMask,progress,preview->generateLocal(model,images,rig,resolution,automaticMask,progress,preview) })
+            { images,resolution,automaticMask,progress->generateLocal(model,images,resolution,automaticMask,progress) })
     }
 }

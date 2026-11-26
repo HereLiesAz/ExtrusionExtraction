@@ -119,8 +119,14 @@ class MainActivity:ComponentActivity() {
                     { report,done->learnedReport=report;learnedDone=done;learnedPicker.launch(arrayOf("*/*")) },
                     { done->imagesDone=done;imagesPicker.launch(arrayOf("image/*")) },
                     { bytes,done->pending=bytes;saveDone=done;saver.launch("model.glb") },
-                    { image->Bitmap.createBitmap(image.argb,IMAGE_SIZE,IMAGE_SIZE,Bitmap.Config.ARGB_8888).asImageBitmap() },false,
-                    { images,rig,resolution,automaticMask,progress,preview->generateLocal(model,images,rig,resolution,automaticMask,progress,preview) })
+                    { image->Bitmap.createBitmap(image.argb,IMAGE_SIZE,IMAGE_SIZE,Bitmap.Config.ARGB_8888).asImageBitmap() },
+                    { png ->
+                        val decoded=BitmapFactory.decodeByteArray(png,0,png.size) ?: error("Invalid texture PNG.")
+                        try { IntArray(decoded.width*decoded.height).also {
+                            decoded.getPixels(it,0,decoded.width,0,0,decoded.width,decoded.height)
+                        } } finally { decoded.recycle() }
+                    },false,
+                    { images,resolution,automaticMask,progress->generateLocal(model,images,resolution,automaticMask,progress) })
             }
         }
     }
