@@ -17,7 +17,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Desktop document adapter. The same shared native inference and geometry code runs here. */
-fun main()=application {
+fun main(args:Array<String>) {
+    if(args.firstOrNull()==DESKTOP_WORKER_FLAG) {
+        runDesktopWorker(args.drop(1))
+        return
+    }
+    application {
     val model=File(System.getProperty("user.home"),".extrusion-extraction/models/da3.onnx")
     val foreground=segmentationFile(model)
     Window(onCloseRequest=::exitApplication,title="Extrusion Extraction") {
@@ -34,17 +39,17 @@ fun main()=application {
                 val file=choose("Select DA3 ONNX graph",FileDialog.LOAD).firstOrNull()
                 scope.launch { done(withContext(Dispatchers.IO) { runCatching {
                     require(file!=null) { "Import cancelled." }
-                    installModel(file.inputStream(),model) { report(TransferProgress("Importing DA3",it,file.length())) }
+                    acquireGraphInWorker(model,"import-da3",file,report)
                 } }) }
             },
-            { report -> withContext(Dispatchers.IO) { downloadModel(model,transfer=report) } },
+            { report -> withContext(Dispatchers.IO) { acquireGraphInWorker(model,"download-da3",null,report) } },
             { foreground.isFile },
-            { report -> withContext(Dispatchers.IO) { downloadSegmentation(foreground,report) } },
+            { report -> withContext(Dispatchers.IO) { acquireGraphInWorker(foreground,"download-foreground",null,report) } },
             { report,done->
                 val file=choose("Select U²-Net foreground graph",FileDialog.LOAD).firstOrNull()
                 scope.launch { done(withContext(Dispatchers.IO) { runCatching {
                     require(file!=null) { "Import cancelled." }
-                    installSegmentation(file.inputStream(),foreground) { report(TransferProgress("Importing U²-Net",it,file.length())) }
+                    acquireGraphInWorker(foreground,"import-foreground",file,report)
                 } }) }
             },
             { SkinTokensEngine.available() }, { SkinTokensEngine.unavailableReason() }, { SkinTokensEngine.installed(model) },
@@ -96,6 +101,7 @@ fun main()=application {
                 val decoded=ImageIO.read(png.inputStream()) ?: error("Invalid texture PNG.")
                 decoded.getRGB(0,0,decoded.width,decoded.height,null,0,decoded.width)
             },true,
-            { images,resolution,automaticMask,progress->generateLocal(model,images,resolution,automaticMask,progress) })
+            { images,resolution,automaticMask,progress->reconstructInWorker(model,images,resolution,automaticMask,progress) })
     }
+}
 }

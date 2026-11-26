@@ -79,6 +79,10 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
     var status by remember { mutableStateOf("Ready") }
     var transfer by remember { mutableStateOf<TransferProgress?>(null) }
     val scope=rememberCoroutineScope()
+    DisposableEffect(session) {
+        val current=session
+        onDispose { current?.close?.invoke() }
+    }
     fun invalidate() {
         session=null; variants=emptyMap(); activeVariant=RigMode.NONE; showMesh=false
         generationResult="Inputs changed. Generate a model."; generationFailed=false
