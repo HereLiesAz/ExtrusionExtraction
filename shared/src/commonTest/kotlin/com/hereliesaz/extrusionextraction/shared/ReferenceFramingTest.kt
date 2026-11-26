@@ -23,6 +23,23 @@ class ReferenceFramingTest {
         assertFalse(image.observed(137*IMAGE_SIZE+252))
         assertTrue(image.observed(138*IMAGE_SIZE+252))
     }
+    @Test fun onlySmallDisconnectedEdgeFragmentsAreOfferedForRemoval() {
+        val pixels=IntArray(IMAGE_SIZE*IMAGE_SIZE)
+        for(y in 100..399) for(x in 100..399) pixels[y*IMAGE_SIZE+x]=-1
+        for(y in 30..39) for(x in 0..9) pixels[y*IMAGE_SIZE+x]=-1
+        for(y in 20..29) for(x in 20..29) pixels[y*IMAGE_SIZE+x]=-1
+        for(y in 200..204) for(x in 399 until IMAGE_SIZE) pixels[y*IMAGE_SIZE+x]=-1
+        val image=ViewImage("fragment fixture",pixels)
+        val fragments=findEdgeFragments(image)
+        assertEquals(1,fragments.count)
+        assertEquals(100,fragments.indices.size)
+        val cleaned=removeEdgeFragments(image,fragments)
+        assertEquals(-1,image.argb[30*IMAGE_SIZE])
+        assertEquals(0,cleaned.argb[30*IMAGE_SIZE])
+        assertEquals(-1,cleaned.argb[20*IMAGE_SIZE+20])
+        assertEquals(-1,cleaned.argb[200*IMAGE_SIZE+503])
+        assertEquals(0,findEdgeFragments(cleaned).count)
+    }
     @Test fun interpolationDoesNotPullRgbFromFullyTransparentPixels() {
         val image=fitReferenceImage("edge",2,2,intArrayOf(0xffff0000.toInt(),0x000000ff,0xffff0000.toInt(),0x000000ff))
         val edge=image.argb[252*IMAGE_SIZE+252]

@@ -48,3 +48,48 @@ fun fitReferenceImage(name:String,width:Int,height:Int,argb:IntArray):ViewImage 
     }
     return ViewImage(name,pixels,bounds,masked,clipped)
 }
+
+/** Review candidates only: disconnected alpha islands touching the source crop
+ * and no larger than 2% of the largest component. Never removed automatically.
+ */
+internal class EdgeFragments(val count:Int,val indices:IntArray)
+
+internal fun findEdgeFragments(image:ViewImage,checkpoint:()->Unit={}):EdgeFragments {
+    if(!image.sourceMask) return EdgeFragments(0,IntArray(0))
+    val seen=BooleanArray(image.argb.size)
+    val queue=IntArray(image.argb.size)
+    val candidates=mutableListOf<IntArray>()
+    val bounds=image.sourceBounds
+    var largest=0
+    for(start in image.argb.indices) {
+        if(start%4096==0) checkpoint()
+        if(seen[start] || !image.observed(start) || image.argb[start].ushr(24)==0) continue
+        var head=0;var tail=1;var edge=false
+        queue[0]=start;seen[start]=true
+        while(head<tail) {
+            if(head%4096==0) checkpoint()
+            val p=queue[head++];val x=p%IMAGE_SIZE;val y=p/IMAGE_SIZE
+            if(x==bounds.left || x==bounds.right-1 || y==bounds.top || y==bounds.bottom-1) edge=true
+            for(dy in -1..1) for(dx in -1..1) {
+                if(dx==0 && dy==0) continue
+                val nx=x+dx;val ny=y+dy
+                if(!bounds.contains(nx,ny)) continue
+                val next=ny*IMAGE_SIZE+nx
+                if(seen[next] || image.argb[next].ushr(24)==0) continue
+                seen[next]=true;queue[tail++]=next
+            }
+        }
+        largest=maxOf(largest,tail)
+        if(edge) candidates.add(queue.copyOf(tail))
+    }
+    val small=candidates.filter { it.size.toLong()*50<=largest.toLong() }
+    return EdgeFragments(small.size,small.flatMap { it.asIterable() }.toIntArray())
+}
+
+/** Apply only the reviewed candidates, leaving all other source pixels unchanged. */
+internal fun removeEdgeFragments(image:ViewImage,fragments:EdgeFragments):ViewImage {
+    if(fragments.count==0) return image
+    val pixels=image.argb.copyOf()
+    for(index in fragments.indices) pixels[index]=0
+    return ViewImage(image.name,pixels,image.sourceBounds,image.sourceMask,image.croppedForeground)
+}

@@ -59,6 +59,8 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
     var automaticMask by remember { mutableStateOf(true) }
     var images by remember { mutableStateOf(emptyList<ViewImage>()) }
     var selected by remember { mutableStateOf<ViewImage?>(null) }
+    var edgeFragments by remember { mutableStateOf(emptyMap<ViewImage,EdgeFragments>()) }
+    var originalReferences by remember { mutableStateOf(emptyMap<ViewImage,ViewImage>()) }
     var playing by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var resolution by remember { mutableStateOf(72f) }
@@ -132,6 +134,13 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
         runModelOperation(if(mode==RigMode.TEMPLATE) "Humanoid rig" else "SkinTokens rig") { report ->
             val generated=current.createVariant(mode,report)
             variants=variants+(mode to generated); activeVariant=mode; showMesh=true
+        }
+    }
+    LaunchedEffect(images) {
+        val current=images
+        edgeFragments=withContext(Dispatchers.Default) {
+            val context=currentCoroutineContext()
+            current.associateWith { findEdgeFragments(it) { context.ensureActive() } }
         }
     }
     LaunchedEffect(playing,images) {
@@ -253,11 +262,39 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                                         },contentAlignment=Alignment.Center) { Text("↔ Drag") }
                                         TextButton(enabled=!busy,onClick={
                                             images=images.filterNot{it===image}
+                                            originalReferences=originalReferences-image
                                             if(selected===image) selected=images.firstOrNull()
                                             invalidate()
                                         }) { Text("Remove") }
                                     }
                                 }
+                            }
+                        }
+                        val flagged=images.filter { (edgeFragments[it]?.count ?: 0)>0 }
+                        if(flagged.isNotEmpty()) {
+                            Text("Possible adjacent-image fragments: "+flagged.joinToString { it.name },
+                                style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.tertiary)
+                            TextButton(enabled=!busy,onClick={playing=false;showMesh=false;selected=flagged.first()}) {
+                                Text("Review first flagged reference")
+                            }
+                        }
+                        selected?.let { image ->
+                            val fragments=edgeFragments[image]
+                            if(fragments!=null && fragments.count>0) {
+                                Text("${fragments.count} small detached edge fragments in ${image.name}.")
+                                OutlinedButton(enabled=!busy,onClick={
+                                    val cleaned=removeEdgeFragments(image,fragments)
+                                    originalReferences=originalReferences+(cleaned to image)
+                                    images=images.map { if(it===image) cleaned else it }
+                                    selected=cleaned;playing=false;invalidate()
+                                }) { Text("Remove edge fragments") }
+                            }
+                            originalReferences[image]?.let { original ->
+                                TextButton(enabled=!busy,onClick={
+                                    images=images.map { if(it===image) original else it }
+                                    originalReferences=originalReferences-image
+                                    selected=original;playing=false;invalidate()
+                                }) { Text("Undo fragment removal") }
                             }
                         }
                         Text("Front view first, then adjacent overlapping views.",style=MaterialTheme.typography.bodySmall)
