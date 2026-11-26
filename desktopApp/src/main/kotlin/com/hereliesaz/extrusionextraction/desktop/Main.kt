@@ -47,7 +47,7 @@ fun main()=application {
                     installSegmentation(file.inputStream(),foreground) { report(TransferProgress("Importing U²-Net",it,file.length())) }
                 } }) }
             },
-            { SkinTokensEngine.available() }, { SkinTokensEngine.installed(model) },
+            { SkinTokensEngine.available() }, { SkinTokensEngine.unavailableReason() }, { SkinTokensEngine.installed(model) },
             { report -> withContext(Dispatchers.IO) { val c=kotlinx.coroutines.currentCoroutineContext();SkinTokensEngine.download(model,report){ c.ensureActive() } } },
             { report,done ->
                 val files=choose("Select all three SkinTokens GGUF files",FileDialog.LOAD,true)

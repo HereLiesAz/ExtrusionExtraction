@@ -46,7 +46,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
         download:suspend ((TransferProgress)->Unit)->Unit,
         segmentationInstalled:()->Boolean, downloadForeground:suspend ((TransferProgress)->Unit)->Unit,
         selectForeground:((TransferProgress)->Unit,(Result<Unit>)->Unit)->Unit,
-        learnedAvailable:()->Boolean, learnedInstalled:()->Boolean, downloadLearned:suspend ((TransferProgress)->Unit)->Unit,
+        learnedAvailable:()->Boolean, learnedRuntimeIssue:()->String?, learnedInstalled:()->Boolean, downloadLearned:suspend ((TransferProgress)->Unit)->Unit,
         selectLearned:((TransferProgress)->Unit,(Result<Unit>)->Unit)->Unit,
         selectImages:((Result<List<ViewImage>>)->Unit)->Unit,
         save:(ByteArray,(Result<Unit>)->Unit)->Unit,
@@ -56,6 +56,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
     var foregroundInstalled by remember { mutableStateOf(segmentationInstalled()) }
     var learnedReady by remember { mutableStateOf(learnedInstalled()) }
     val nativeReady=remember { learnedAvailable() }
+    val nativeIssue=remember { learnedRuntimeIssue() }
     var automaticMask by remember { mutableStateOf(true) }
     var images by remember { mutableStateOf(emptyList<ViewImage>()) }
     var selected by remember { mutableStateOf<ViewImage?>(null) }
@@ -88,7 +89,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
     fun begin(label:String) { busy=true; status=label; transfer=null }
     fun finish(result:Result<Unit>,label:String) {
         refresh(); transfer=null; busy=false
-        result.onSuccess { status=label }.onFailure { status=it.message ?: "Operation failed." }
+        result.onSuccess { status=label }.onFailure { status="Failed: "+(it.message ?: it::class.simpleName ?: "Operation failed.") }
     }
     val report:(TransferProgress)->Unit={ value -> scope.launch { if(busy) { transfer=value; status=value.label } } }
     fun acquire(label:String,action:suspend ((TransferProgress)->Unit)->Unit) {
@@ -218,6 +219,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                             if(!nativeReady) "Native runtime unavailable" else if(learnedReady) "Installed" else "Optional",
                             !busy && nativeReady,!busy && nativeReady,
                             {acquire("Downloading SkinTokens",downloadLearned)},{importGraph("Importing SkinTokens",selectLearned)})
+                        if(!nativeReady) nativeIssue?.let { Text(it,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error) }
                         HorizontalDivider()
                         Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                             Text("References",style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f))
@@ -330,7 +332,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                                     })})
                             }
                         }
-                        if(!learnedReady) Text("Install SkinTokens to apply the learned rig.",style=MaterialTheme.typography.bodySmall)
+                        if(!learnedReady) Text(if(nativeReady) "Install SkinTokens to apply the learned rig." else "SkinTokens requires a compatible native runtime.",style=MaterialTheme.typography.bodySmall)
                         val blocked=when {
                             !installed -> "Install DA3 first."
                             images.size<VIEW_COUNT -> "Add at least $VIEW_COUNT reference images."

@@ -113,7 +113,7 @@ class MainActivity:ComponentActivity() {
                     { foreground.isFile },
                     { report->withContext(Dispatchers.IO) { downloadSegmentation(foreground,report) } },
                     { report,done->foregroundReport=report;foregroundDone=done;foregroundPicker.launch(arrayOf("*/*")) },
-                    { SkinTokensEngine.available() }, { SkinTokensEngine.installed(model) },
+                    { SkinTokensEngine.available() }, { SkinTokensEngine.unavailableReason() }, { SkinTokensEngine.installed(model) },
                     { report->withContext(Dispatchers.IO) { val c=kotlinx.coroutines.currentCoroutineContext();SkinTokensEngine.download(model,report){ c.ensureActive() } } },
                     { report,done->learnedReport=report;learnedDone=done;learnedPicker.launch(arrayOf("*/*")) },
                     { done->imagesDone=done;imagesPicker.launch(arrayOf("image/*")) },
