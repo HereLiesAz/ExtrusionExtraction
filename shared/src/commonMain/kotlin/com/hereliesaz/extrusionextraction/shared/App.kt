@@ -316,13 +316,14 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                     }
                 }
                 BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                    val previewHeight = minOf(220.dp, maxHeight * 0.34f)
                     if(desktop && maxWidth>=680.dp) {
                         Row(Modifier.fillMaxSize(),horizontalArrangement=Arrangement.spacedBy(16.dp)) {
                             controls(Modifier.weight(1f).fillMaxHeight())
                             preview(Modifier.weight(1f).fillMaxHeight())
                         }
                     } else Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                        if(images.isNotEmpty() || model!=null) preview(Modifier.fillMaxWidth().heightIn(max=220.dp).height(maxHeight*0.34f))
+                        if(images.isNotEmpty() || model!=null) preview(Modifier.fillMaxWidth().height(previewHeight))
                         controls(Modifier.weight(1f).fillMaxWidth())
                     }
                 }
