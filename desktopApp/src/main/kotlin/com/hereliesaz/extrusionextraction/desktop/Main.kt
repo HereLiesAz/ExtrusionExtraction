@@ -118,6 +118,15 @@ fun main(args:Array<String>) {
                 launchColabBrowser(request,openPanel={false},
                     openBrowser={uriHandler.openUri(COLAB_NOTEBOOK_URL)})
             },
+            { done->
+                scope.launch {
+                    val result=try {
+                        Result.success(withContext(Dispatchers.IO){authorizeDesktopColab()})
+                    } catch(e:kotlinx.coroutines.CancellationException) { throw e }
+                    catch(e:Exception) { Result.failure(e) }
+                    done(result)
+                }
+            },
             { image ->
                 val buffer=BufferedImage(IMAGE_SIZE,IMAGE_SIZE,BufferedImage.TYPE_INT_ARGB)
                 buffer.setRGB(0,0,IMAGE_SIZE,IMAGE_SIZE,image.argb,0,IMAGE_SIZE)

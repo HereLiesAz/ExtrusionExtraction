@@ -17,6 +17,7 @@ kotlin {
             implementation(compose.material3)
             api(compose.ui)
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
         }
         commonTest.dependencies { implementation(kotlin("test")) }
         val androidMain by getting {

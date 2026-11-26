@@ -8,7 +8,7 @@ kotlin {
     sourceSets {
         val main by getting {
             kotlin.srcDirs("../shared/src/commonMain/kotlin", "../shared/src/jvmShared/kotlin", "../desktopApp/src/main/kotlin")
-            kotlin.exclude("**/App.kt", "**/Main.kt")
+            kotlin.exclude("**/App.kt", "**/Main.kt", "**/GoogleColabTransfer.kt", "**/DesktopColabAuth.kt")
         }
         val test by getting {
             kotlin.srcDirs("../shared/src/commonTest/kotlin", "../shared/src/desktopTest/kotlin", "../desktopApp/src/test/kotlin")

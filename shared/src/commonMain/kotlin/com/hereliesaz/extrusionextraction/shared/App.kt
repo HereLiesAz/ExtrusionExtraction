@@ -48,6 +48,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
         saveColabJob:(ByteArray,(Result<Unit>)->Unit)->Unit,
         importColabResult:((Result<Map<RigMode,GeneratedModel>>)->Unit)->Unit,
         openColab:(ColabBrowserRequest)->ColabBrowserSurface,
+        authorizeColab:((Result<ColabTransfer>)->Unit)->Unit,
         bitmap:(ViewImage)->ImageBitmap, decodeTexture:(ByteArray)->IntArray, desktop:Boolean,
         generate:suspend (List<ViewImage>,Int,Boolean,(String)->Unit)->ReconstructionSession) {
     var installed by remember { mutableStateOf(modelInstalled()) }
@@ -60,6 +61,12 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
     var colabLearned by remember { mutableStateOf(false) }
     var colabBrowserSurface by remember { mutableStateOf<ColabBrowserSurface?>(null) }
     var colabBrowserError by remember { mutableStateOf<String?>(null) }
+    var colabTransfer by remember { mutableStateOf<ColabTransfer?>(null) }
+    var colabRuntimes by remember { mutableStateOf(emptyList<ColabRuntime>()) }
+    var colabRuntime by remember { mutableStateOf<ColabRuntime?>(null) }
+    var colabCode by remember { mutableStateOf("") }
+    var pairedCode by remember { mutableStateOf<String?>(null) }
+    var colabSent by remember { mutableStateOf(false) }
     var images by remember { mutableStateOf(emptyList<ViewImage>()) }
     var selected by remember { mutableStateOf<ViewImage?>(null) }
     var edgeFragments by remember { mutableStateOf(emptyMap<ViewImage,EdgeFragments>()) }
@@ -141,6 +148,22 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                 generationResult="Failed at $stage: insufficient memory. Reduce mesh detail or reference count."
                 generationFailed=true; status=generationResult
             } finally { busy=false; transfer=null }
+        }
+    }
+    fun acceptColabResult(imported:Map<RigMode,GeneratedModel>) {
+        playing=false;session=null;variants=imported
+        activeVariant=RigMode.NONE;showMesh=true
+        generationResult="Imported Colab reconstruction"
+        generationFailed=false
+    }
+    fun transferColab(label:String,action:suspend ()->String) {
+        begin(label)
+        scope.launch {
+            try { status=action() }
+            catch(e:CancellationException) { throw e }
+            catch(e:Exception) { status="Colab transfer failed: "+(e.message ?: "Request failed.") }
+            catch(e:OutOfMemoryError) { status="Not enough memory for Colab transfer." }
+            finally { busy=false;transfer=null }
         }
     }
     fun applyRig(mode:RigMode) {
@@ -278,16 +301,79 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                                     importColabResult { result->
                                         busy=false;transfer=null
                                         result.onSuccess { imported->
-                                            playing=false;session=null;variants=imported
-                                            activeVariant=RigMode.NONE;showMesh=true
-                                            generationResult="Imported Colab reconstruction"
-                                            generationFailed=false
+                                            acceptColabResult(imported)
                                             status="Colab result imported."
                                         }.onFailure {
                                             status="Result import failed: "+(it.message ?: "Invalid result.")
                                         }
                                     }
                                 }) { Text("Import Colab result") }
+                                HorizontalDivider()
+                                Text("Google-authorized transfers · Experimental",style=MaterialTheme.typography.titleSmall)
+                                Text("Run the notebook's pairing cell first. Select its existing runtime below. No runtime is created or deleted by the app.",
+                                    style=MaterialTheme.typography.bodySmall)
+                                OutlinedButton(enabled=!busy,onClick={
+                                    begin("Authorizing Google")
+                                    try {
+                                        authorizeColab { result->
+                                            result.onSuccess { client->
+                                                colabTransfer=client;colabRuntime=null;pairedCode=null;colabSent=false
+                                                colabRuntimes=emptyList()
+                                                transferColab("Listing Colab runtimes") {
+                                                    colabRuntimes=client.runtimes()
+                                                    if(colabRuntimes.isEmpty()) "No active Colab runtimes. Connect in the notebook first."
+                                                    else "Choose the runtime matching the notebook."
+                                                }
+                                            }.onFailure {
+                                                busy=false;status="Google authorization failed: "+(it.message ?: "Authorization cancelled.")
+                                            }
+                                        }
+                                    } catch(e:Exception) {busy=false;status=e.message ?: "Google authorization unavailable."}
+                                }) { Text(if(colabTransfer==null)"Authorize Google" else "Authorize again / refresh runtimes") }
+                                if(colabTransfer!=null) {
+                                    TextButton(enabled=!busy,onClick={
+                                        colabTransfer=null;colabRuntime=null;colabRuntimes=emptyList()
+                                        colabCode="";pairedCode=null;colabSent=false
+                                        status="Disconnected from Colab API."
+                                    }) { Text("Disconnect API") }
+                                    for(runtime in colabRuntimes) {
+                                        FilterChip(selected=colabRuntime==runtime,enabled=!busy,onClick={
+                                            colabRuntime=runtime;pairedCode=null;colabSent=false
+                                        },label={Text(runtime.name+" · "+runtime.description,maxLines=2)})
+                                    }
+                                    OutlinedTextField(value=colabCode,onValueChange={
+                                        colabCode=it.trim().take(32);pairedCode=null;colabSent=false
+                                    },enabled=!busy,singleLine=true,label={Text("Notebook pairing code")})
+                                    OutlinedButton(enabled=!busy && colabRuntime!=null && colabCode.length==32,onClick={
+                                        val client=colabTransfer ?: return@OutlinedButton
+                                        val runtime=colabRuntime ?: return@OutlinedButton
+                                        val code=colabCode
+                                        transferColab("Verifying notebook pairing") {
+                                            client.pair(runtime,code);pairedCode=code;colabSent=false
+                                            "Notebook paired. Send references or retrieve its completed result."
+                                        }
+                                    }) { Text("Pair notebook") }
+                                    val paired=pairedCode==colabCode && pairedCode!=null && colabRuntime!=null
+                                    Button(enabled=!busy && paired && !colabSent && images.size>=VIEW_COUNT,onClick={
+                                        val client=colabTransfer ?: return@Button
+                                        val runtime=colabRuntime ?: return@Button
+                                        val code=pairedCode ?: return@Button
+                                        val job=ColabJob(images.toList(),resolution.toInt(),automaticMask,colabTemplate,colabLearned)
+                                        transferColab("Sending reference job to Colab") {
+                                            client.upload(runtime,code,job);colabSent=true
+                                            "Job uploaded. Run the reconstruction cell in the paired notebook."
+                                        }
+                                    }) { Text("Send job to notebook") }
+                                    OutlinedButton(enabled=!busy && paired,onClick={
+                                        val client=colabTransfer ?: return@OutlinedButton
+                                        val runtime=colabRuntime ?: return@OutlinedButton
+                                        val code=pairedCode ?: return@OutlinedButton
+                                        transferColab("Retrieving Colab result") {
+                                            acceptColabResult(client.download(runtime,code))
+                                            "Colab result imported."
+                                        }
+                                    }) { Text("Retrieve completed result") }
+                                }
                             }
                         }
                         Text("Models",style=MaterialTheme.typography.titleLarge)
