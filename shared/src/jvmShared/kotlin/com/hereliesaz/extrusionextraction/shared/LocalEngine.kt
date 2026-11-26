@@ -9,6 +9,11 @@ import java.nio.FloatBuffer
 import java.security.MessageDigest
 import java.net.HttpURLConnection
 import java.net.URI
+import java.net.UnknownHostException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import javax.net.ssl.SSLException
+import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -93,6 +98,14 @@ internal fun downloadVerifiedGraph(source:String,onLength:(Long?)->Unit={},insta
                 connection.inputStream.use(install)
                 return
             }
+        } catch(e:UnknownHostException) {
+            throw IOException("Cannot resolve model host ${url.host}. Check your internet connection or import the downloaded file.",e)
+        } catch(e:ConnectException) {
+            throw IOException("Cannot connect to model host ${url.host}. Check your connection or import the file.",e)
+        } catch(e:SocketTimeoutException) {
+            throw IOException("Connection to model host ${url.host} timed out. Retry or import the file.",e)
+        } catch(e:SSLException) {
+            throw IOException("Secure connection to model host ${url.host} failed. Check your connection or import the file.",e)
         } finally { connection.disconnect() }
     }
     error("Too many model download redirects.")

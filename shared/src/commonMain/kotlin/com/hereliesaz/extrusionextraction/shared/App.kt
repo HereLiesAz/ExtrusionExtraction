@@ -46,7 +46,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
         download:suspend ((TransferProgress)->Unit)->Unit,
         segmentationInstalled:()->Boolean, downloadForeground:suspend ((TransferProgress)->Unit)->Unit,
         selectForeground:((TransferProgress)->Unit,(Result<Unit>)->Unit)->Unit,
-        learnedAvailable:()->Boolean, learnedInstalled:()->Boolean, downloadLearned:suspend ((TransferProgress)->Unit)->Unit,
+        learnedAvailable:()->Boolean, learnedRuntimeIssue:()->String?, learnedInstalled:()->Boolean, downloadLearned:suspend ((TransferProgress)->Unit)->Unit,
         selectLearned:((TransferProgress)->Unit,(Result<Unit>)->Unit)->Unit,
         selectImages:((Result<List<ViewImage>>)->Unit)->Unit,
         save:(ByteArray,(Result<Unit>)->Unit)->Unit,
@@ -56,9 +56,12 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
     var foregroundInstalled by remember { mutableStateOf(segmentationInstalled()) }
     var learnedReady by remember { mutableStateOf(learnedInstalled()) }
     val nativeReady=remember { learnedAvailable() }
+    val nativeIssue=remember { learnedRuntimeIssue() }
     var automaticMask by remember { mutableStateOf(true) }
     var images by remember { mutableStateOf(emptyList<ViewImage>()) }
     var selected by remember { mutableStateOf<ViewImage?>(null) }
+    var edgeFragments by remember { mutableStateOf(emptyMap<ViewImage,EdgeFragments>()) }
+    var originalReferences by remember { mutableStateOf(emptyMap<ViewImage,ViewImage>()) }
     var playing by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var resolution by remember { mutableStateOf(72f) }
@@ -76,6 +79,10 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
     var status by remember { mutableStateOf("Ready") }
     var transfer by remember { mutableStateOf<TransferProgress?>(null) }
     val scope=rememberCoroutineScope()
+    DisposableEffect(session) {
+        val current=session
+        onDispose { current?.close?.invoke() }
+    }
     fun invalidate() {
         session=null; variants=emptyMap(); activeVariant=RigMode.NONE; showMesh=false
         generationResult="Inputs changed. Generate a model."; generationFailed=false
@@ -86,7 +93,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
     fun begin(label:String) { busy=true; status=label; transfer=null }
     fun finish(result:Result<Unit>,label:String) {
         refresh(); transfer=null; busy=false
-        result.onSuccess { status=label }.onFailure { status=it.message ?: "Operation failed." }
+        result.onSuccess { status=label }.onFailure { status="Failed: "+(it.message ?: it::class.simpleName ?: "Operation failed.") }
     }
     val report:(TransferProgress)->Unit={ value -> scope.launch { if(busy) { transfer=value; status=value.label } } }
     fun acquire(label:String,action:suspend ((TransferProgress)->Unit)->Unit) {
@@ -132,6 +139,13 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
         runModelOperation(if(mode==RigMode.TEMPLATE) "Humanoid rig" else "SkinTokens rig") { report ->
             val generated=current.createVariant(mode,report)
             variants=variants+(mode to generated); activeVariant=mode; showMesh=true
+        }
+    }
+    LaunchedEffect(images) {
+        val current=images
+        edgeFragments=withContext(Dispatchers.Default) {
+            val context=currentCoroutineContext()
+            current.associateWith { findEdgeFragments(it) { context.ensureActive() } }
         }
     }
     LaunchedEffect(playing,images) {
@@ -209,6 +223,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                             if(!nativeReady) "Native runtime unavailable" else if(learnedReady) "Installed" else "Optional",
                             !busy && nativeReady,!busy && nativeReady,
                             {acquire("Downloading SkinTokens",downloadLearned)},{importGraph("Importing SkinTokens",selectLearned)})
+                        if(!nativeReady) nativeIssue?.let { Text(it,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error) }
                         HorizontalDivider()
                         Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                             Text("References",style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f))
@@ -253,6 +268,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                                         },contentAlignment=Alignment.Center) { Text("↔ Drag") }
                                         TextButton(enabled=!busy,onClick={
                                             images=images.filterNot{it===image}
+                                            originalReferences=originalReferences-image
                                             if(selected===image) selected=images.firstOrNull()
                                             invalidate()
                                         }) { Text("Remove") }
@@ -260,7 +276,37 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                                 }
                             }
                         }
+                        val flagged=images.filter { (edgeFragments[it]?.count ?: 0)>0 }
+                        if(flagged.isNotEmpty()) {
+                            Text("Possible adjacent-image fragments: "+flagged.joinToString { it.name },
+                                style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.tertiary)
+                            TextButton(enabled=!busy,onClick={playing=false;showMesh=false;selected=flagged.first()}) {
+                                Text("Review first flagged reference")
+                            }
+                        }
+                        selected?.let { image ->
+                            val fragments=edgeFragments[image]
+                            if(fragments!=null && fragments.count>0) {
+                                Text("${fragments.count} small detached edge fragments in ${image.name}.")
+                                OutlinedButton(enabled=!busy,onClick={
+                                    val cleaned=removeEdgeFragments(image,fragments)
+                                    originalReferences=originalReferences+(cleaned to image)
+                                    images=images.map { if(it===image) cleaned else it }
+                                    selected=cleaned;playing=false;invalidate()
+                                }) { Text("Remove edge fragments") }
+                            }
+                            originalReferences[image]?.let { original ->
+                                TextButton(enabled=!busy,onClick={
+                                    images=images.map { if(it===image) original else it }
+                                    originalReferences=originalReferences-image
+                                    selected=original;playing=false;invalidate()
+                                }) { Text("Undo fragment removal") }
+                            }
+                        }
                         Text("Front view first, then adjacent overlapping views.",style=MaterialTheme.typography.bodySmall)
+                        val cropped=images.count { it.croppedForeground }
+                        if(cropped>0) Text("$cropped reference images have foreground touching a crop boundary. Padding is excluded from fusion; missing details cannot be recovered from those views alone.",
+                            style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.tertiary)
                         HorizontalDivider()
                         Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                             Switch(checked=automaticMask,onCheckedChange={automaticMask=it;invalidate()},enabled=!busy)
@@ -290,7 +336,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                                     })})
                             }
                         }
-                        if(!learnedReady) Text("Install SkinTokens to apply the learned rig.",style=MaterialTheme.typography.bodySmall)
+                        if(!learnedReady) Text(if(nativeReady) "Install SkinTokens to apply the learned rig." else "SkinTokens requires a compatible native runtime.",style=MaterialTheme.typography.bodySmall)
                         val blocked=when {
                             !installed -> "Install DA3 first."
                             images.size<VIEW_COUNT -> "Add at least $VIEW_COUNT reference images."

@@ -88,12 +88,11 @@ class MainActivity:ComponentActivity() {
                             }
                             val bitmap=contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it,null,options) }
                                 ?: error("Cannot decode $name")
-                            val scaled=Bitmap.createScaledBitmap(bitmap,IMAGE_SIZE,IMAGE_SIZE,true)
                             try {
-                                val pixels=IntArray(IMAGE_SIZE*IMAGE_SIZE)
-                                scaled.getPixels(pixels,0,IMAGE_SIZE,0,0,IMAGE_SIZE,IMAGE_SIZE)
-                                ViewImage(name,pixels)
-                            } finally { if(scaled!==bitmap) scaled.recycle();bitmap.recycle() }
+                                val pixels=IntArray(bitmap.width*bitmap.height)
+                                bitmap.getPixels(pixels,0,bitmap.width,0,0,bitmap.width,bitmap.height)
+                                fitReferenceImage(name,bitmap.width,bitmap.height,pixels)
+                            } finally { bitmap.recycle() }
                         }
                     } })
                 }
@@ -114,7 +113,7 @@ class MainActivity:ComponentActivity() {
                     { foreground.isFile },
                     { report->withContext(Dispatchers.IO) { downloadSegmentation(foreground,report) } },
                     { report,done->foregroundReport=report;foregroundDone=done;foregroundPicker.launch(arrayOf("*/*")) },
-                    { SkinTokensEngine.available() }, { SkinTokensEngine.installed(model) },
+                    { SkinTokensEngine.available() }, { SkinTokensEngine.unavailableReason() }, { SkinTokensEngine.installed(model) },
                     { report->withContext(Dispatchers.IO) { val c=kotlinx.coroutines.currentCoroutineContext();SkinTokensEngine.download(model,report){ c.ensureActive() } } },
                     { report,done->learnedReport=report;learnedDone=done;learnedPicker.launch(arrayOf("*/*")) },
                     { done->imagesDone=done;imagesPicker.launch(arrayOf("image/*")) },
