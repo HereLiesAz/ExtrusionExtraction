@@ -261,6 +261,9 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                             }
                         }
                         Text("Front view first, then adjacent overlapping views.",style=MaterialTheme.typography.bodySmall)
+                        val cropped=images.count { it.croppedForeground }
+                        if(cropped>0) Text("$cropped reference images have foreground touching a crop boundary. Padding is excluded from fusion; missing details cannot be recovered from those views alone.",
+                            style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.tertiary)
                         HorizontalDivider()
                         Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                             Switch(checked=automaticMask,onCheckedChange={automaticMask=it;invalidate()},enabled=!busy)

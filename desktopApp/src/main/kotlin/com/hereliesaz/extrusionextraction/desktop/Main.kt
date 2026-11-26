@@ -74,14 +74,8 @@ fun main()=application {
                                 reader.read(0,params)
                             } finally { reader.dispose() }
                         }
-                        val resized=BufferedImage(IMAGE_SIZE,IMAGE_SIZE,BufferedImage.TYPE_INT_ARGB)
-                        val graphics=resized.createGraphics()
-                        try {
-                            graphics.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
-                                java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR)
-                            graphics.drawImage(image,0,0,IMAGE_SIZE,IMAGE_SIZE,null)
-                        } finally { graphics.dispose() }
-                        ViewImage(file.name,resized.getRGB(0,0,IMAGE_SIZE,IMAGE_SIZE,null,0,IMAGE_SIZE))
+                        fitReferenceImage(file.name,image.width,image.height,
+                            image.getRGB(0,0,image.width,image.height,null,0,image.width))
                     }
                 } }) }
             },
