@@ -8,6 +8,12 @@ import kotlinx.coroutines.runBlocking
 
 /** Headless notebook entry point using the production reconstruction engine and session. */
 fun main(args: Array<String>) = runBlocking {
+    if(args.contentEquals(arrayOf("--check"))) {
+        checkReconstructionRuntime()
+        check(SkinTokensEngine.available()) { "SkinTokens native runtime unavailable." }
+        println("EE_WORKER_READY")
+        return@runBlocking
+    }
     val fromJob=args.firstOrNull()=="--job"
     require(if(fromJob) args.size==4 else args.size in (5+VIEW_COUNT)..(5+MAX_REFERENCES)) {
         "Usage: --job <model-dir> <new-output-dir> <eejob-file> OR <model-dir> <new-output-dir> <cells> <mask|no-mask> <none|template|learned|both> <ordered-images...>"
