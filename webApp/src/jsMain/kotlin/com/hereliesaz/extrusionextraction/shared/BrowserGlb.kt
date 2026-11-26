@@ -20,6 +20,17 @@ internal fun validateBrowserGlb(model:GeneratedModel) {
     require(int(binHeader+4)==0x004e4942 && int(binHeader)==bytes.size-binHeader-8) { "Invalid GLB BIN chunk." }
     val bin=binHeader+8
     val root=Json.parseToJsonElement(bytes.decodeToString(20,binHeader)).jsonObject
+    fun requireEmbedded(value:JsonElement) {
+        when(value) {
+            is JsonObject -> {
+                require(value.keys.none{it in setOf("uri","extensions","extensionsUsed","extensionsRequired","extras")}) { "External or extended GLB data is not supported." }
+                value.values.forEach(::requireEmbedded)
+            }
+            is JsonArray -> value.forEach(::requireEmbedded)
+            else -> Unit
+        }
+    }
+    requireEmbedded(root)
     fun JsonObject.number(key:String)=getValue(key).jsonPrimitive.int
     fun JsonObject.array(key:String)=getValue(key).jsonArray
     fun JsonObject.obj(key:String)=getValue(key).jsonObject
@@ -43,7 +54,9 @@ internal fun validateBrowserGlb(model:GeneratedModel) {
             a.number("componentType")==component && a.number("count")==count && a.getValue("type").jsonPrimitive.content==type)
         return view(a.number("bufferView"),count.toLong()*stride)
     }
-    val primitive=root.array("meshes").single().objectAt().array("primitives").single().objectAt()
+    val meshObject=root.array("meshes").single().objectAt()
+    require(meshObject.keys==setOf("primitives"))
+    val primitive=meshObject.array("primitives").single().objectAt()
     require(primitive.keys.all{it in setOf("attributes","indices","material")})
     val attrs=primitive.obj("attributes")
     val mesh=model.mesh
@@ -77,7 +90,15 @@ internal fun validateBrowserGlb(model:GeneratedModel) {
         require(image.keys==setOf("bufferView","mimeType") && image["mimeType"]?.jsonPrimitive?.content=="image/png")
         val start=view(image.number("bufferView"),atlas.png.size.toLong())
         require(atlas.png.indices.all{bytes[start+it]==atlas.png[it]}) { "GLB texture mismatch." }
-        require(primitive.number("material")==0 && root.array("textures").single().objectAt().number("source")==0)
+        val texture=root.array("textures").single().objectAt()
+        require(primitive.number("material")==0 && texture.keys==setOf("sampler","source") && texture.number("source")==0 && texture.number("sampler")==0)
+        val sampler=root.array("samplers").single().objectAt()
+        require(sampler.keys==setOf("magFilter","minFilter","wrapS","wrapT") && sampler.number("magFilter")==9729 && sampler.number("minFilter")==9729 && sampler.number("wrapS")==33071 && sampler.number("wrapT")==33071)
+        val material=root.array("materials").single().objectAt()
+        require(material.keys==setOf("pbrMetallicRoughness"))
+        val pbr=material.obj("pbrMetallicRoughness")
+        require(pbr.keys==setOf("baseColorTexture","metallicFactor","roughnessFactor") && pbr.number("metallicFactor")==0 && pbr.number("roughnessFactor")==1)
+        require(pbr.obj("baseColorTexture").keys==setOf("index") && pbr.obj("baseColorTexture").number("index")==0)
     }
     val nodes=root.array("nodes")
     require(root.number("scene")==0 && root.array("scenes").single().objectAt().array("nodes").map{it.jsonPrimitive.int}==

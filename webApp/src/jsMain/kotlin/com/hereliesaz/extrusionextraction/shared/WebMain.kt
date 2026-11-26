@@ -59,11 +59,14 @@ fun main() {
     suspend fun chooseVariant(mode:RigMode) {
         val model=models[mode] ?: return
         selected=mode;selector.value=mode.name;texturePixels=null
+        var textureError:String?=null
         model.atlas?.let { atlas->
             try {
                 texturePixels=decodePixels(blob(atlas.png,"image/png"),atlas.size,atlas.size).third
-            } catch(e:Exception) { status("Texture preview unavailable: "+(e.message ?: "Invalid PNG.")) }
+            } catch(e:CancellationException) { throw e }
+            catch(e:Exception) { textureError="Texture preview unavailable: "+(e.message ?: "Invalid PNG.") }
         }
+        status(textureError ?: "Preview ready: "+mode.name)
         preview();controls()
     }
     fun setReferences() {
@@ -105,7 +108,7 @@ fun main() {
         val files=input("references").asDynamic().files
         val count=files.length as Int
         if(count>0) {
-            val chosen=List(count){files.item(it)}
+            val chosen=List<dynamic>(count){files.item(it)}
             input("references").value=""
             operation("Decoding reference images…") {
                 require(references.size+count<=MAX_REFERENCES) { "Too many references." }
@@ -203,7 +206,8 @@ private suspend fun decodePixels(file:dynamic,expectedWidth:Int?=null,expectedHe
 }
 
 private fun blob(bytes:ByteArray,mime:String):dynamic {
-    val data=js("new Uint8Array(bytes.length)")
+    val length=bytes.size
+    val data=js("new Uint8Array(length)")
     for(i in bytes.indices) data[i]=bytes[i].toInt() and 255
     val parts=arrayOf(data)
     val options=js("({})");options.type=mime
