@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
@@ -76,6 +77,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
     var status by remember { mutableStateOf("Ready") }
     var transfer by remember { mutableStateOf<TransferProgress?>(null) }
     val scope=rememberCoroutineScope()
+    val uriHandler=LocalUriHandler.current
     fun invalidate() {
         session=null; variants=emptyMap(); activeVariant=RigMode.NONE; showMesh=false
         generationResult="Inputs changed. Generate a model."; generationFailed=false
@@ -198,6 +200,18 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                 }
                 val controls:@Composable (Modifier)->Unit={ modifier ->
                     Column(modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                                Text("Colab · Experimental",style=MaterialTheme.typography.titleMedium)
+                                Text("Run the actual notebook using your own Google account. Local reconstruction remains available. Upload references and download results in Colab.",
+                                    style=MaterialTheme.typography.bodySmall)
+                                OutlinedButton(enabled=!busy,onClick={
+                                    try {
+                                        uriHandler.openUri("https://colab.research.google.com/github/HereLiesAz/ExtrusionExtraction/blob/main/notebooks/ExtrusionExtraction.ipynb")
+                                    } catch(e:Exception) { status="Cannot open Colab: ${e.message ?: "Browser unavailable"}" }
+                                }) { Text("Open Colab notebook") }
+                            }
+                        }
                         Text("Models",style=MaterialTheme.typography.titleLarge)
                         ModelRow("DA3 Base","Depth and camera estimation · approximately 413 MB",
                             if(installed) "Installed" else "Required",!busy,!busy,

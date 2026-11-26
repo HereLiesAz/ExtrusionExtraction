@@ -4,6 +4,8 @@ Reconstruct textured, rigged 3D models from overlapping reference images and exp
 
 ## Use
 
+Optional: [experimental Colab notebook](docs/COLAB.md) runs reconstruction in the user's own interactive runtime. Local execution remains available.
+
 The top status remains visible during operations. Model transfers report bytes processed; inference reports its current stage and available work counts. The Models section provides acquisition controls for each stage. Drag reference thumbnails by their handles to reorder, or play the ordered frames in the persistent preview. The generation outcome remains visible, including the failed stage and reason. Rotate the result and independently toggle texture, wireframe and rig overlays.
 
 On Windows, install the MSI and launch **ExtrusionExtraction** from the Start menu.

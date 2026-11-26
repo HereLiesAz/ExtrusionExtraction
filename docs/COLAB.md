@@ -1,0 +1,7 @@
+# Colab (experimental interactive workflow)
+
+The notebook is optional, not an execution replacement. Free managed Colab prohibits using it as a hidden application backend; see the [FAQ](https://research.google.com/colaboratory/faq.html). Use a user-controlled notebook, not an app-side web UI, tunnel, unattended worker or automated runtime pool. No billing integrations or paid fallbacks are provided.
+
+The [notebook](../notebooks/ExtrusionExtraction.ipynb) runs the desktop JVM engine headlessly, with the same decoder, model verification, reconstruction and independent rig variants. Existing local Android and desktop execution stays intact. Supply a reviewed commit SHA, install the prerequisites, upload ordered images, and explicitly run the reconstruction cell. GLB exports can be downloaded from the notebook; the shared workspace opens the actual notebook in the system browser. Embedded authentication, automatic transfer, direct app import and web integration are not implemented. Runtime expiration loses temporary files. No automatic retries or fallback are attempted.
+
+Validation gates: Linux build, desktop regressions, model-backed GLBs, parity with desktop, actual free Colab memory/runtime and SkinTokens native toolchain, cold GLEE review. GPU acceleration and integrated remote execution remain unvalidated. If a native build or learned model fails, the base and successful template export remain available if reconstruction succeeds.

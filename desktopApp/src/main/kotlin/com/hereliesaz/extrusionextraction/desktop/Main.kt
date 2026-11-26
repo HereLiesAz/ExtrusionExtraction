@@ -59,30 +59,7 @@ fun main()=application {
                 val files=choose("Select overlapping views",FileDialog.LOAD,true)
                 scope.launch { done(withContext(Dispatchers.IO) { runCatching {
                     require(files.size<=MAX_REFERENCES) { "Select at most $MAX_REFERENCES views." }
-                    files.map { file->
-                        val image=ImageIO.createImageInputStream(file).use { input->
-                            val readers=ImageIO.getImageReaders(input)
-                            require(readers.hasNext()) { "Unsupported image: ${file.name}" }
-                            val reader=readers.next()
-                            try {
-                                reader.input=input
-                                val width=reader.getWidth(0);val height=reader.getHeight(0)
-                                require(width.toLong()*height<=40_000_000) { "Image exceeds pixel limit." }
-                                val step=maxOf(1,maxOf(width,height)/(IMAGE_SIZE*2))
-                                val params=reader.defaultReadParam
-                                params.setSourceSubsampling(step,step,0,0)
-                                reader.read(0,params)
-                            } finally { reader.dispose() }
-                        }
-                        val resized=BufferedImage(IMAGE_SIZE,IMAGE_SIZE,BufferedImage.TYPE_INT_ARGB)
-                        val graphics=resized.createGraphics()
-                        try {
-                            graphics.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
-                                java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR)
-                            graphics.drawImage(image,0,0,IMAGE_SIZE,IMAGE_SIZE,null)
-                        } finally { graphics.dispose() }
-                        ViewImage(file.name,resized.getRGB(0,0,IMAGE_SIZE,IMAGE_SIZE,null,0,IMAGE_SIZE))
-                    }
+                    files.map(::decodeReference)
                 } }) }
             },
             { bytes,done->

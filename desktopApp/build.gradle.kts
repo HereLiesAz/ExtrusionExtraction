@@ -10,6 +10,7 @@ dependencies {
     implementation(project(":shared"))
     implementation(compose.desktop.currentOs)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
+    testImplementation(kotlin("test"))
 }
 val state = Properties().apply { rootProject.file("version.properties").inputStream().use { load(it) } }
 // The product version remains canonical. macOS requires a positive installer major.
@@ -38,5 +39,17 @@ compose.desktop {
             linux { iconFile.set(project.file("icons/icon.png")) }
             modules("java.desktop", "java.logging", "jdk.unsupported")
         }
+    }
+}
+
+/** Headless reconstruction for explicit notebook jobs, independent of the desktop window. */
+tasks.register<JavaExec>("reconstructHeadless") {
+    group = "application"
+    description = "Reconstruct ordered reference images and export GLB variants without a window."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.hereliesaz.extrusionextraction.desktop.HeadlessKt")
+    systemProperty("java.awt.headless", "true")
+    providers.gradleProperty("skinTokensNativeDir").orNull?.let {
+        systemProperty("compose.application.resources.dir", file(it).resolve("common").absolutePath)
     }
 }
