@@ -41,15 +41,3 @@ compose.desktop {
         }
     }
 }
-
-/** Headless reconstruction for explicit notebook jobs, independent of the desktop window. */
-tasks.register<JavaExec>("reconstructHeadless") {
-    group = "application"
-    description = "Reconstruct ordered reference images and export GLB variants without a window."
-    classpath = sourceSets["main"].runtimeClasspath
-    mainClass.set("com.hereliesaz.extrusionextraction.desktop.HeadlessKt")
-    systemProperty("java.awt.headless", "true")
-    providers.gradleProperty("skinTokensNativeDir").orNull?.let {
-        systemProperty("compose.application.resources.dir", file(it).resolve("common").absolutePath)
-    }
-}

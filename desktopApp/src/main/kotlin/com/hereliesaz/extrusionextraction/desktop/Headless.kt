@@ -44,11 +44,17 @@ fun main(args: Array<String>) = runBlocking {
     }
     val model = File(modelDir, "da3.onnx")
     fun report(message: String) { println(message) }
-    if (model.isFile) installModel(model.inputStream(), model) else downloadModel(model, ::report)
+    fun transfer(progress:TransferProgress) {
+        report(progress.label+": "+progress.completed+" bytes"+(progress.total?.let{" / "+it} ?: ""))
+    }
+    if (model.isFile) {
+        report("Verifying DA3")
+        installModel(model.inputStream(), model)
+    } else downloadModel(model, ::report, ::transfer)
     if (mask && !images.all(::hasForegroundMask)) {
         val foreground = segmentationFile(model)
         if (foreground.isFile) installSegmentation(foreground.inputStream(), foreground)
-        else downloadSegmentation(foreground)
+        else downloadSegmentation(foreground, ::transfer)
     }
     check(output.mkdirs()) { "Cannot create output directory." }
     /** Publish only complete GLBs; preserve previous exports if a later variant fails. */
@@ -67,7 +73,7 @@ fun main(args: Array<String>) = runBlocking {
             check(SkinTokensEngine.available()) { "SkinTokens native runtime unavailable." }
             if (!SkinTokensEngine.installed(model)) {
                 report("Acquiring verified SkinTokens models")
-                SkinTokensEngine.download(model)
+                SkinTokensEngine.download(model, ::transfer)
             }
         }
         val result = session.createVariant(mode, ::report)
