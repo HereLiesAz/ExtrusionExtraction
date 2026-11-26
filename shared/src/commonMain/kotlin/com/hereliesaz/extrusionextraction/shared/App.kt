@@ -1,6 +1,5 @@
 package com.hereliesaz.extrusionextraction.shared
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,7 +12,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
@@ -27,8 +25,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.cos
-import kotlin.math.sin
 
 /** Measured bytes, or an indeterminate operation when the source has no known length. */
 data class TransferProgress(val label:String, val completed:Long, val total:Long?) {
@@ -125,7 +121,7 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                 generationResult="Failed at $stage: ${e.message ?: e::class.simpleName ?: "Unknown error"}"
                 generationFailed=true; status=generationResult
             } catch(e:OutOfMemoryError) {
-                generationResult="Failed at $stage: insufficient memory. Reduce fusion resolution or reference count."
+                generationResult="Failed at $stage: insufficient memory. Reduce mesh detail or reference count."
                 generationFailed=true; status=generationResult
             } finally { busy=false; transfer=null }
         }
@@ -270,8 +266,16 @@ fun App(modelInstalled:()->Boolean, selectModel:((TransferProgress)->Unit,(Resul
                             Switch(checked=automaticMask,onCheckedChange={automaticMask=it;invalidate()},enabled=!busy)
                             Text("Automatic foreground segmentation")
                         }
-                        Text("Fusion resolution: ${resolution.toInt()}")
+                        Text("Mesh detail",style=MaterialTheme.typography.titleMedium)
+                        val cells=resolution.toInt()
+                        Text("$cells × $cells × $cells voxel grid")
                         Slider(value=resolution,onValueChange={resolution=it;invalidate()},valueRange=32f..96f,steps=7,enabled=!busy)
+                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+                            Text("Coarser / faster",style=MaterialTheme.typography.labelSmall)
+                            Text("Finer / slower",style=MaterialTheme.typography.labelSmall)
+                        }
+                        Text("Divides the reconstruction volume into 3D cells. More cells can capture finer geometry but require more time and memory. This does not change image or texture resolution.",
+                            style=MaterialTheme.typography.bodySmall)
                         Text("Rigging",style=MaterialTheme.typography.titleMedium)
                         Text("Apply either rig after reconstruction. The unrigged model remains available.")
                         Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
